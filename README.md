@@ -180,9 +180,9 @@ Scan generated images:
 ```
 $ for f in $(ls -1 test_images/*.qcow2); do sudo /home/popey/sbom-vm/sbom-vm.py  /home/popey/sbom-vm/$f; done
 2025-02-01 19:22:55,833 - INFO - Loading NBD kernel module
-2025-02-01 19:22:56,842 - INFO - Detecting format of /home/popey/sbom-from-vm-image/test_images/alpine_latest.qcow2
+2025-02-01 19:22:56,842 - INFO - Detecting format of /home/popey/sbom-vm/test_images/alpine_latest.qcow2
 2025-02-01 19:22:56,847 - INFO - qemu-img detected format: qcow2
-2025-02-01 19:22:56,848 - INFO - Connecting image /home/popey/sbom-from-vm-image/test_images/alpine_latest.qcow2 to NBD device
+2025-02-01 19:22:56,848 - INFO - Connecting image /home/popey/sbom-vm/test_images/alpine_latest.qcow2 to NBD device
 2025-02-01 19:22:57,872 - INFO - Analyzing partitions
 2025-02-01 19:22:57,885 - INFO - Found EFI system partition /dev/nbd0p1
 2025-02-01 19:22:57,885 - INFO - Found usable partition /dev/nbd0p2 of type ext4
@@ -222,7 +222,7 @@ $ for f in $(ls -1 test_images/*.qcow2); do sudo /home/popey/sbom-vm/sbom-vm.py 
 Scan the SBOMs for vulnerabilities.
 
 ```
-for f in 20250201_192*.json; do grype $f; done
+$ for f in 20250201_192*.json; do grype $f; done
  ✔ Scanned for vulnerabilities     [2 vulnerability matches]
    ├── by severity: 0 critical, 0 high, 2 medium, 0 low, 0 negligible
    └── by status:   0 fixed, 2 not-fixed, 0 ignored
