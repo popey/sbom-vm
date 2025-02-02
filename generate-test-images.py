@@ -13,6 +13,42 @@ from typing import Optional, List, Dict
 # Get the directory where the script is located
 SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 
+# Define filesystem configurations
+TEST_FILESYSTEMS = {
+    "zfs": {
+        "base_image": "ubuntu:22.04",
+        "required_packages": ["zfsutils-linux"],
+        "priority": 1,
+        "mount_options": [],
+        "mkfs_command": ["zfs", "create", "-o", "mountpoint=/mnt/root"],
+        "needs_pool": True
+    },
+    "ext4": {
+        "base_image": "debian:12",
+        "required_packages": ["e2fsprogs"],
+        "priority": 1,
+        "mount_options": [],
+        "mkfs_command": ["mkfs.ext4", "-F"],
+        "needs_pool": False
+    },
+    "xfs": {
+        "base_image": "fedora:latest",
+        "required_packages": ["xfsprogs"],
+        "priority": 1,
+        "mount_options": [],
+        "mkfs_command": ["mkfs.xfs", "-f"],
+        "needs_pool": False
+    },
+    "btrfs": {
+        "base_image": "opensuse/leap:latest",
+        "required_packages": ["btrfs-progs"],
+        "priority": 1,
+        "mount_options": [],
+        "mkfs_command": ["mkfs.btrfs", "-f"],
+        "needs_pool": False
+    }
+}
+
 class CommandNotFoundException(Exception):
     pass
 
@@ -22,12 +58,15 @@ class TestImageGenerator:
         'parted': 'parted',
         'losetup': 'util-linux',
         'mkfs.fat': 'dosfstools',
-        'mkfs.ext4': 'e2fsprogs',
         'mount': 'util-linux',
         'umount': 'util-linux',
         'docker': 'docker.io',
         'tar': 'tar',
-        'qemu-img': 'qemu-utils'
+        'qemu-img': 'qemu-utils',
+        'zpool': 'zfsutils-linux',
+        'zfs': 'zfsutils-linux',
+        'mkfs.xfs': 'xfsprogs',
+        'mkfs.btrfs': 'btrfs-progs'
     }
 
     def __init__(self, output_dir: str = "test_images"):
@@ -56,14 +95,13 @@ class TestImageGenerator:
             )
 
     def _run_command(self, command: List[str], check: bool = True, 
-                        timeout: Optional[int] = None, binary_output: bool = False, **kwargs) -> subprocess.CompletedProcess:
+                    timeout: Optional[int] = None, binary_output: bool = False, **kwargs) -> subprocess.CompletedProcess:
         """Run a command with proper logging and error handling."""
         cmd_str = ' '.join(command)
         self.logger.debug(f"Running command: {cmd_str}")
         
         try:
             if 'stdout' in kwargs or 'stderr' in kwargs:
-                # If stdout/stderr are redirected, don't use capture_output
                 result = subprocess.run(
                     command,
                     check=check,
@@ -72,7 +110,6 @@ class TestImageGenerator:
                     **kwargs
                 )
             else:
-                # Otherwise capture output for logging
                 result = subprocess.run(
                     command,
                     check=check,
@@ -112,7 +149,6 @@ class TestImageGenerator:
             "fallocate", "-l", f"{size_mb}M", str(image_path)
         ])
         
-        # Verify file was created with correct size
         if not image_path.exists():
             raise RuntimeError(f"Failed to create image file: {image_path}")
             
@@ -125,40 +161,45 @@ class TestImageGenerator:
             
         return image_path
 
-    def partition_disk(self, image_path: Path):
-        """Create a typical partition layout."""
-        self.logger.info(f"Creating partition table on {image_path}")
+    def partition_disk(self, image_path: Path, fs_type: str):
+        """Create a partition layout appropriate for the filesystem type."""
+        self.logger.info(f"Creating partition table for {fs_type} on {image_path}")
         
-        # Verify image exists
         if not image_path.exists():
             raise FileNotFoundError(f"Image file not found: {image_path}")
         
-        parted_commands = [
-            "mklabel gpt",
-            # EFI System Partition
-            "mkpart ESP fat32 1MiB 501MiB",
-            "set 1 esp on",
-            # Root partition
-            "mkpart primary ext4 501MiB 100%"
-        ]
+        if fs_type == "zfs":
+            # For ZFS, create a partition specifically marked for Solaris/ZFS
+            parted_commands = [
+                "mklabel gpt",
+                # Create a ZFS partition
+                "mkpart zfs 1MiB 100%",
+                # Set the Solaris root partition type
+                "set 1 raid on"  # This sets the partition type to Linux RAID
+            ]
+        else:
+            # For other filesystems, create ESP and root partitions
+            parted_commands = [
+                "mklabel gpt",
+                "mkpart ESP fat32 1MiB 501MiB",
+                "set 1 esp on",
+                f"mkpart primary {fs_type} 501MiB 100%"
+            ]
         
         for cmd in parted_commands:
             self._run_command(["parted", "-s", str(image_path)] + cmd.split())
-            # Brief pause to ensure partition table changes are registered
             time.sleep(0.5)
 
     def setup_loop_device(self, image_path: Path) -> str:
         """Attach disk image to loop device."""
         self.logger.info(f"Setting up loop device for {image_path}")
         
-        # Verify image exists
         if not image_path.exists():
             raise FileNotFoundError(f"Image file not found: {image_path}")
             
         result = self._run_command(["losetup", "--show", "-f", str(image_path)])
         loop_device = result.stdout.strip()
         
-        # Verify loop device was created
         if not Path(loop_device).exists():
             raise RuntimeError(f"Failed to create loop device: {loop_device}")
             
@@ -170,66 +211,75 @@ class TestImageGenerator:
         
         # Wait for partition device nodes and verify they exist
         time.sleep(1)
-        for i in range(1, 3):  # We expect 2 partitions
-            part_path = f"{loop_device}p{i}"
-            if not Path(part_path).exists():
-                raise RuntimeError(f"Expected partition not found: {part_path}")
-                
+        
         return loop_device
 
-    def create_filesystems(self, loop_device: str):
-        """Create filesystems on partitions."""
-        self.logger.info("Creating filesystems")
-        
-        # Verify partition devices exist
-        for i in range(1, 3):
-            part_path = f"{loop_device}p{i}"
-            if not Path(part_path).exists():
-                raise RuntimeError(f"Partition device not found: {part_path}")
-        
-        # Create ESP
-        self._run_command(["mkfs.fat", "-F32", f"{loop_device}p1"])
-        
-        # Create root filesystem
-        self._run_command(["mkfs.ext4", "-F", f"{loop_device}p2"])
-
-    def mount_root_partition(self, loop_device: str, mount_point: Path):
-        """Mount the root partition."""
-        self.logger.info(f"Mounting root partition to {mount_point}")
-        
-        mount_point.mkdir(parents=True, exist_ok=True)
-        if not os.access(mount_point, os.W_OK):
-            raise PermissionError(f"Cannot write to mount point: {mount_point}")
-            
-        self._run_command(["mount", f"{loop_device}p2", str(mount_point)])
-        
-        # Verify mount was successful
-        if not self._is_mounted(mount_point):
-            raise RuntimeError(f"Failed to mount {loop_device}p2 at {mount_point}")
-
-    def _is_mounted(self, path: Path) -> bool:
-        """Check if a path is a mountpoint."""
+    def cleanup_zfs(self):
+        """Clean up any ZFS pools created by this script."""
         try:
-            return path.is_mount()
+            # List all pools
+            pools = self._run_command(["zpool", "list", "-H", "-o", "name"], check=False)
+            if pools.returncode == 0 and pools.stdout.strip():
+                for pool in pools.stdout.strip().split('\n'):
+                    pool_name = pool.strip()
+                    
+                    # Only cleanup pools we created (sbomtmp prefix)
+                    if pool_name.startswith("sbomtmp"):
+                        self.logger.info(f"Cleaning up ZFS pool {pool_name}")
+                        
+                        try:
+                            # First try to unmount any datasets
+                            datasets = self._run_command(
+                                ["zfs", "list", "-H", "-o", "name", "-r", pool_name],
+                                check=False
+                            )
+                            if datasets.returncode == 0:
+                                for dataset in reversed(datasets.stdout.strip().split('\n')):
+                                    try:
+                                        self.logger.debug(f"Unmounting dataset {dataset}")
+                                        self._run_command(["zfs", "unmount", dataset], check=False)
+                                    except Exception as e:
+                                        self.logger.debug(f"Error unmounting dataset {dataset}: {e}")
+
+                            # Try to export nicely first
+                            self._run_command(["zpool", "export", pool_name], check=False)
+                        except Exception as e:
+                            self.logger.warning(f"Error during clean export of {pool_name}: {e}")
+                            
+                        # If still exists, force destruction
+                        if self._pool_exists(pool_name):
+                            self.logger.warning(f"Forcing destruction of pool {pool_name}")
+                            self._run_command(["zpool", "destroy", "-f", pool_name], check=False)
+
+        except Exception as e:
+            self.logger.warning(f"Error during ZFS cleanup: {e}")
+
+    def _pool_exists(self, pool_name: str) -> bool:
+        """Check if a ZFS pool exists."""
+        try:
+            result = self._run_command(["zpool", "list", pool_name], check=False)
+            return result.returncode == 0
         except Exception:
             return False
 
-    def _ensure_unmounted(self, mount_point: Path, max_retries: int = 3, delay: float = 3.0):
-        """Ensure a mount point is fully unmounted."""
-        for attempt in range(max_retries):
-            if not self._is_mounted(mount_point):
-                return True
+    def convert_to_qcow2(self, raw_image: Path) -> Path:
+        """Convert raw image to qcow2 format."""
+        self.logger.info(f"Converting {raw_image} to qcow2 format")
+        
+        qcow2_path = self.output_dir / f"{raw_image.stem}.qcow2"
+        if qcow2_path.exists():
+            self.logger.warning(f"Removing existing qcow2 image: {qcow2_path}")
+            qcow2_path.unlink()
             
-            if attempt > 0:
-                self.logger.info(f"Mount point still busy, attempt {attempt + 1}/{max_retries}")
-                time.sleep(delay)
+        self._run_command([
+            "qemu-img", "convert", "-f", "raw", "-O", "qcow2",
+            str(raw_image), str(qcow2_path)
+        ])
+        
+        if not qcow2_path.exists():
+            raise RuntimeError(f"Failed to create qcow2 image: {qcow2_path}")
             
-            try:
-                self._run_command(["umount", "-f", str(mount_point)], check=False)
-            except Exception as e:
-                self.logger.warning(f"Unmount attempt failed: {e}")
-                
-        return not self._is_mounted(mount_point)
+        return qcow2_path
 
     def _ensure_loop_detached(self, loop_device: str, max_retries: int = 3, delay: float = 3.0):
         """Ensure a loop device is fully detached."""
@@ -266,8 +316,159 @@ class TestImageGenerator:
             check=False
         ).stdout.strip())
 
-    def populate_from_container(self, mount_point: Path, container: str = "ubuntu:22.04"):
+    def generate_test_image(self, fs_type: str) -> Path:
+        """Generate a complete test disk image with specified filesystem."""
+        fs_config = TEST_FILESYSTEMS[fs_type]
+        base_image = fs_config["base_image"]
+        
+        # Generate a filename based on filesystem type and base image
+        safe_name = f"{base_image.replace(':', '_').replace('/', '_')}_{fs_type}"
+        qcow2_path = self.output_dir / f"{safe_name}.qcow2"
+        
+        if qcow2_path.exists():
+            self.logger.info(f"Test image {qcow2_path} already exists, skipping generation")
+            return qcow2_path
+            
+        self.logger.info(f"Generating {fs_type} test image from {base_image}")
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            mount_point = temp_dir_path / "mnt"
+            
+            # Change to temp directory to avoid busy mount point issues
+            original_dir = os.getcwd()
+            os.chdir(temp_dir)
+            
+            try:
+                # Create and partition raw disk
+                raw_image = self.create_raw_disk()
+                self.partition_disk(raw_image, fs_type)
+                
+                # Setup loop device
+                loop_device = self.setup_loop_device(raw_image)
+                try:
+                    # Create filesystems
+                    self.create_filesystems(loop_device, fs_type)
+                    
+                    # Mount and populate root filesystem
+                    self.mount_root_partition(loop_device, mount_point, fs_type)
+                    try:
+                        self.populate_from_container(mount_point, fs_type)
+                    finally:
+                        # Clean up mounts
+                        if fs_type == "zfs":
+                            self.cleanup_zfs()
+                        else:
+                            self.logger.info(f"Unmounting {mount_point}")
+                            if not self._ensure_unmounted(mount_point):
+                                raise RuntimeError(f"Failed to unmount {mount_point}")
+                finally:
+                    # Detach loop device
+                    self.logger.info(f"Detaching loop device {loop_device}")
+                    if not self._ensure_loop_detached(loop_device):
+                        raise RuntimeError(f"Failed to detach loop device {loop_device}")
+                
+                # Return to original directory before conversion
+                os.chdir(original_dir)
+                
+                # Convert to qcow2
+                qcow2_image = self.convert_to_qcow2(raw_image)
+                final_path = self.output_dir / f"{safe_name}.qcow2"
+                qcow2_image.rename(final_path)
+                
+                # Cleanup raw image
+                raw_image.unlink()
+                
+                return final_path
+                
+            except Exception as e:
+                self.logger.error(f"Failed during image generation: {str(e)}")
+                os.chdir(original_dir)
+                raise
+
+    def create_filesystems(self, loop_device: str, fs_type: str):
+        """Create filesystems based on type."""
+        self.logger.info(f"Creating {fs_type} filesystem")
+        
+        fs_config = TEST_FILESYSTEMS[fs_type]
+        
+        if fs_type == "zfs":
+            # Create a ZFS pool and filesystem structure with safeguards
+            pool_name = "sbomtmp"  # Unique name to avoid conflicts
+            altroot = "/tmp/sbom_zfs_tmp"  # Isolated mount point
+            
+            # Create altroot directory
+            os.makedirs(altroot, exist_ok=True)
+            
+            try:
+                # Create the pool on the partition with an isolated altroot
+                self._run_command([
+                    "zpool", "create", "-f",
+                    "-o", "ashift=12",     # Proper alignment for modern disks
+                    "-o", "altroot=" + altroot,  # Isolated mount point
+                    "-O", "mountpoint=/",   # Root dataset mountpoint
+                    "-O", "compression=on", # Common ZFS feature
+                    "-O", "atime=off",      # Improve performance
+                    pool_name,
+                    f"{loop_device}p1"
+                ])
+                
+                # Verify pool was created correctly
+                result = self._run_command(["zpool", "list", pool_name])
+                if pool_name not in result.stdout:
+                    raise RuntimeError(f"Failed to create ZFS pool {pool_name}")
+                    
+            except Exception as e:
+                self.logger.error(f"Error creating ZFS pool: {e}")
+                # Attempt cleanup
+                self._run_command(["zpool", "destroy", "-f", pool_name], check=False)
+                raise
+                
+        else:
+            # Non-ZFS filesystem creation (unchanged)
+            self._run_command(["mkfs.fat", "-F32", f"{loop_device}p1"])
+            mkfs_cmd = fs_config["mkfs_command"] + [f"{loop_device}p2"]
+            self._run_command(mkfs_cmd)
+
+    def mount_root_partition(self, loop_device: str, mount_point: Path, fs_type: str):
+        """Mount the root partition."""
+        self.logger.info(f"Mounting root partition to {mount_point}")
+        
+        mount_point.mkdir(parents=True, exist_ok=True)
+        if not os.access(mount_point, os.W_OK):
+            raise PermissionError(f"Cannot write to mount point: {mount_point}")
+        
+        fs_config = TEST_FILESYSTEMS[fs_type]
+        
+        if fs_type == "zfs":
+            # For ZFS, the filesystem should already be mounted at altroot
+            # We'll just verify it's accessible
+            pool_name = "sbomtmp"
+            altroot = "/tmp/sbom_zfs_tmp"
+            
+            if not os.path.ismount(altroot):
+                raise RuntimeError(f"ZFS pool not mounted at expected location: {altroot}")
+                
+            # Create symlink from mount_point to altroot for consistency
+            if mount_point.exists():
+                if mount_point.is_symlink():
+                    mount_point.unlink()
+                else:
+                    shutil.rmtree(mount_point)
+            mount_point.symlink_to(altroot)
+            
+        else:
+            # For other filesystems, mount the second partition
+            self._run_command(["mount"] + fs_config["mount_options"] + [f"{loop_device}p2", str(mount_point)])
+        
+        if not self._is_mounted(mount_point) and not (fs_type == "zfs" and os.path.ismount(altroot)):
+            raise RuntimeError(f"Failed to mount filesystem at {mount_point}")
+
+    def populate_from_container(self, mount_point: Path, fs_type: str):
         """Extract container rootfs and add it to the image."""
+        fs_config = TEST_FILESYSTEMS[fs_type]
+        container = fs_config["base_image"]
+        
         self.logger.info(f"Populating root filesystem from container {container}")
         
         # Verify docker is running
@@ -295,7 +496,6 @@ class TestImageGenerator:
                     binary_output=True
                 )
             
-            # Verify export succeeded
             if not rootfs_tar.exists() or rootfs_tar.stat().st_size == 0:
                 raise RuntimeError("Failed to export container filesystem")
                 
@@ -313,89 +513,30 @@ class TestImageGenerator:
             self.logger.info("Cleaning up temporary container")
             self._run_command(["docker", "rm", container_id])
 
-    def convert_to_qcow2(self, raw_image: Path) -> Path:
-        """Convert raw image to qcow2 format."""
-        self.logger.info(f"Converting {raw_image} to qcow2 format")
-        
-        qcow2_path = self.output_dir / f"{raw_image.stem}.qcow2"
-        if qcow2_path.exists():
-            self.logger.warning(f"Removing existing qcow2 image: {qcow2_path}")
-            qcow2_path.unlink()
-            
-        self._run_command([
-            "qemu-img", "convert", "-f", "raw", "-O", "qcow2",
-            str(raw_image), str(qcow2_path)
-        ])
-        
-        # Verify conversion
-        if not qcow2_path.exists():
-            raise RuntimeError(f"Failed to create qcow2 image: {qcow2_path}")
-            
-        return qcow2_path
+    def _is_mounted(self, path: Path) -> bool:
+        """Check if a path is a mountpoint."""
+        try:
+            return path.is_mount()
+        except Exception:
+            return False
 
-    def generate_test_image(self, container: str = "ubuntu:22.04") -> Path:
-        """Generate a complete test disk image."""
-        # Check if image already exists
-        container_safe_name = container.replace(":", "_").replace("/", "_")
-        qcow2_path = self.output_dir / f"{container_safe_name}.qcow2"
-        
-        if qcow2_path.exists():
-            self.logger.info(f"Test image {qcow2_path} already exists, skipping generation")
-            return qcow2_path
+    def _ensure_unmounted(self, mount_point: Path, max_retries: int = 3, delay: float = 3.0):
+        """Ensure a mount point is fully unmounted."""
+        for attempt in range(max_retries):
+            if not self._is_mounted(mount_point):
+                return True
             
-        self.logger.info(f"Generating test image from {container}")
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_dir_path = Path(temp_dir)
-            mount_point = temp_dir_path / "mnt"
-            
-            # Change to temp directory to avoid busy mount point issues
-            original_dir = os.getcwd()
-            os.chdir(temp_dir)
+            if attempt > 0:
+                self.logger.info(f"Mount point still busy, attempt {attempt + 1}/{max_retries}")
+                time.sleep(delay)
             
             try:
-                # Create and partition raw disk
-                raw_image = self.create_raw_disk()
-                self.partition_disk(raw_image)
-                
-                # Setup loop device
-                loop_device = self.setup_loop_device(raw_image)
-                try:
-                    # Create filesystems
-                    self.create_filesystems(loop_device)
-                    
-                    # Mount and populate root partition
-                    self.mount_root_partition(loop_device, mount_point)
-                    try:
-                        self.populate_from_container(mount_point, container)
-                    finally:
-                        # Unmount with retries
-                        self.logger.info(f"Unmounting {mount_point}")
-                        if not self._ensure_unmounted(mount_point):
-                            raise RuntimeError(f"Failed to unmount {mount_point} after multiple attempts")
-                finally:
-                    # Detach loop device with retries
-                    self.logger.info(f"Detaching loop device {loop_device}")
-                    if not self._ensure_loop_detached(loop_device):
-                        raise RuntimeError(f"Failed to detach loop device {loop_device} after multiple attempts")
-                
-                # Return to original directory before conversion
-                os.chdir(original_dir)
-                
-                # Convert to qcow2 with container-specific name
-                qcow2_image = self.convert_to_qcow2(raw_image)
-                final_path = self.output_dir / f"{container_safe_name}.qcow2"
-                qcow2_image.rename(final_path)
-                
-                # Cleanup raw image
-                raw_image.unlink()
-                
-                return final_path
-                
+                self._run_command(["umount", "-f", str(mount_point)], check=False)
             except Exception as e:
-                self.logger.error(f"Failed during image generation: {str(e)}")
-                os.chdir(original_dir)  # Ensure we return to original directory on error
-                raise
+                self.logger.warning(f"Unmount attempt failed: {e}")
+                
+        return not self._is_mounted(mount_point)
+
 
 def main():
     if os.geteuid() != 0:
@@ -414,30 +555,24 @@ def main():
     
     logger = logging.getLogger(__name__)
     
-    # Generate test images from different base containers
     try:
         generator = TestImageGenerator()
     except CommandNotFoundException as e:
         logger.error(str(e))
         return 1
     
-    test_images = [
-        "ubuntu:22.04",
-        "ubuntu:24.04",
-        "debian:10",
-        "debian:12",
-        "fedora:latest",
-        "alpine:3.10",
-        "alpine:latest"
-    ]
-    
+    # Generate one test image for each filesystem type
     success = True
-    for container in test_images:
+    # Sort by priority to do most important filesystems first
+    sorted_fs = sorted(TEST_FILESYSTEMS.items(), 
+                      key=lambda x: (x[1]['priority'], x[0]))
+    
+    for fs_type, fs_config in sorted_fs:
         try:
-            image_path = generator.generate_test_image(container)
-            logger.info(f"Successfully generated test image from {container}: {image_path}")
+            image_path = generator.generate_test_image(fs_type)
+            logger.info(f"Successfully generated {fs_type} test image: {image_path}")
         except Exception as e:
-            logger.error(f"Failed to generate image for {container}: {e}")
+            logger.error(f"Failed to generate {fs_type} image: {e}")
             success = False
             
     return 0 if success else 1
