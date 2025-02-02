@@ -65,7 +65,7 @@ The following packages are required:
 On Ubuntu 24.04 these can be installed via:
 
 ```bash
-$ snap install syft
+$ snap install syft --classic
 $ sudo apt install qemu-utils gdisk fdisk parted util-linux ntfs-3g hfsprogs apfs-dkms apfsprogs
 ```
 
