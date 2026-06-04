@@ -1,0 +1,2 @@
+2026-06-04T13:27:01Z - Commented on issue #1 (CI: Add automation) - Repo Assist suggested adding a GitHub Actions workflow to run image generation and SBOM generation.
+2026-06-04T13:27:01Z - Commented on issue #2 (Docs: Add a contributing guide) - Repo Assist offered to open a baseline CONTRIBUTING.md PR.
