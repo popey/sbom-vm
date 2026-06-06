@@ -8,6 +8,7 @@ import logging
 import shutil
 import time
 import tempfile
+import uuid
 from typing import Optional, List, Dict
 
 # Get the directory where the script is located
@@ -394,8 +395,12 @@ class TestImageGenerator:
         
         if fs_type == "zfs":
             # Create a ZFS pool and filesystem structure with safeguards
-            pool_name = "sbomtmp"  # Unique name to avoid conflicts
-            altroot = "/tmp/sbom_zfs_tmp"  # Isolated mount point
+            # Use a unique pool name and altroot to avoid collisions with existing pools
+            pool_name = f"sbomtmp_{uuid.uuid4().hex[:8]}"
+            altroot = f"/tmp/sbom_zfs_tmp_{uuid.uuid4().hex[:8]}"
+            # Persist names so other methods (cleanup, mount verification) can access them
+            self._zfs_pool_name = pool_name
+            self._zfs_altroot = altroot
             
             # Create altroot directory
             os.makedirs(altroot, exist_ok=True)
@@ -443,8 +448,8 @@ class TestImageGenerator:
         if fs_type == "zfs":
             # For ZFS, the filesystem should already be mounted at altroot
             # We'll just verify it's accessible
-            pool_name = "sbomtmp"
-            altroot = "/tmp/sbom_zfs_tmp"
+            pool_name = getattr(self, "_zfs_pool_name", "sbomtmp")
+            altroot = getattr(self, "_zfs_altroot", "/tmp/sbom_zfs_tmp")
             
             if not os.path.ismount(altroot):
                 raise RuntimeError(f"ZFS pool not mounted at expected location: {altroot}")
