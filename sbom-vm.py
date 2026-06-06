@@ -318,9 +318,10 @@ class ImageMounter:
         logger.info(f"Generating SBOM for mounted filesystem at {self.mount_point}")
         logger.info(f"Filesystem type: {fs_type}")
         
-        # Debug mount contents
-        self._run_command(["ls", "-la", str(self.mount_point)])
-        self._run_command(["mount"])
+        # Debug mount contents (only when debug logging is enabled)
+        if logger.isEnabledFor(logging.DEBUG):
+            self._run_command(["ls", "-la", str(self.mount_point)])
+            self._run_command(["mount"])
         
         # Generate SBOM
         self._run_command([
