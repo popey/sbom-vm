@@ -43,19 +43,34 @@ class ImageMounter:
         self.temp_image = None
 
     def parse_size(self, size_str):
-        """Parse size strings with units into numeric values."""
+        """Parse size strings with units into numeric values (returns MB).
+
+        Examples:
+            '2G' or '2GB' -> 2048.0 (MB)
+            '512M' or '512MB' -> 512.0 (MB)
+            '1024K' or '1024KB' -> 1.0 (MB)
+        """
+        import re
         try:
-            size_str = str(size_str).strip().upper()
-            if 'GB' in size_str:
-                return float(size_str.rstrip('GB')) * 1024
-            elif 'MB' in size_str:
-                return float(size_str.rstrip('MB'))
-            elif 'KB' in size_str:
-                return float(size_str.rstrip('KB')) / 1024
-            else:
-                return float(size_str)
+            s = str(size_str).strip()
+            m = re.match(r'^([0-9]+(?:\.[0-9]+)?)\s*([KkMmGg][Bb]?|[Bb])?$', s)
+            if not m:
+                return 0.0
+            num = float(m.group(1))
+            unit = (m.group(2) or '').lower()
+
+            if unit.startswith('g'):
+                return num * 1024.0
+            if unit.startswith('m') or unit == '':
+                return num
+            if unit.startswith('k'):
+                return num / 1024.0
+            if unit == 'b':
+                # Bytes -> convert to MB
+                return num / (1024.0 * 1024.0)
+            return num
         except (ValueError, AttributeError):
-            return 0
+            return 0.0
 
     def _run_command(self, command: list, check: bool = True, **kwargs) -> subprocess.CompletedProcess:
         try:
