@@ -45,15 +45,16 @@ class ImageMounter:
     def parse_size(self, size_str):
         """Parse size strings with units into numeric values."""
         try:
-            size_str = str(size_str).strip().upper()
-            if 'GB' in size_str:
-                return float(size_str.rstrip('GB')) * 1024
-            elif 'MB' in size_str:
-                return float(size_str.rstrip('MB'))
-            elif 'KB' in size_str:
-                return float(size_str.rstrip('KB')) / 1024
+            s = str(size_str).strip().upper()
+            # Use suffix-aware checks to avoid rstrip removing arbitrary characters
+            if s.endswith('GB'):
+                return float(s[:-2]) * 1024
+            elif s.endswith('MB'):
+                return float(s[:-2])
+            elif s.endswith('KB'):
+                return float(s[:-2]) / 1024
             else:
-                return float(size_str)
+                return float(s)
         except (ValueError, AttributeError):
             return 0
 
@@ -103,11 +104,12 @@ class ImageMounter:
         if image_format == 'gzip':
             logger.info("Decompressing gzipped image")
             self.temp_image = Path(self.temp_dir) / f"{self.image_path.stem}.raw"
-            self._run_command(
-                ["gunzip", "-c", str(self.image_path)],
-                stdout=open(self.temp_image, 'wb'),
-                text=False
-            )
+            with open(self.temp_image, 'wb') as out_f:
+                self._run_command(
+                    ["gunzip", "-c", str(self.image_path)],
+                    stdout=out_f,
+                    text=False
+                )
             return self.temp_image
             
         elif image_format in ['vmdk', 'vhd', 'vpc']:
@@ -304,7 +306,7 @@ class ImageMounter:
             fs_type = self._run_command(
                 ["blkid", "-o", "value", "-s", "TYPE", self.mounted_partition]
             ).stdout.strip()
-        except:
+        except Exception:
             fs_type = "unknown"
         
         # Extract partition device name
