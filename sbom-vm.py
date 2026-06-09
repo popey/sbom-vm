@@ -58,12 +58,20 @@ class ImageMounter:
             return 0
 
     def _run_command(self, command: list, check: bool = True, **kwargs) -> subprocess.CompletedProcess:
+        """Run a subprocess command.
+
+        Respects caller-supplied stdout/text/capture_output kwargs without conflicting defaults.
+        """
+        # Allow callers to override capture_output and text; default to True for both
+        capture_output = kwargs.pop('capture_output', True)
+        text = kwargs.pop('text', True)
         try:
-            result = subprocess.run(command, check=check, capture_output=True, text=True, **kwargs)
+            result = subprocess.run(command, check=check, capture_output=capture_output, text=text, **kwargs)
             return result
         except subprocess.CalledProcessError as e:
             logger.error(f"Command failed: {' '.join(command)}")
-            logger.error(f"Error output: {e.stderr}")
+            if hasattr(e, 'stderr') and e.stderr:
+                logger.error(f"Error output: {e.stderr}")
             raise
 
     def _detect_image_format(self) -> str:
