@@ -1,2 +1,3 @@
 2026-06-04T13:27:01Z - Commented on issue #1 (CI: Add automation) - Repo Assist suggested adding a GitHub Actions workflow to run image generation and SBOM generation.
 2026-06-04T13:27:01Z - Commented on issue #2 (Docs: Add a contributing guide) - Repo Assist offered to open a baseline CONTRIBUTING.md PR.
+2026-06-09T01:16:31Z - Commented on issue #19 (Debug commands left in generate_sbom) - Repo Assist suggested removing or gating debug commands
