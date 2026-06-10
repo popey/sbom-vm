@@ -43,17 +43,29 @@ class ImageMounter:
         self.temp_image = None
 
     def parse_size(self, size_str):
-        """Parse size strings with units into numeric values."""
+        """Parse size strings with units into numeric values (returns size in MB).
+
+        Accepts strings like "10GB", "512MB", "1024KB" and is suffix-aware.
+        """
         try:
             size_str = str(size_str).strip().upper()
-            if 'GB' in size_str:
-                return float(size_str.rstrip('GB')) * 1024
-            elif 'MB' in size_str:
-                return float(size_str.rstrip('MB'))
-            elif 'KB' in size_str:
-                return float(size_str.rstrip('KB')) / 1024
+            # Use suffix-aware parsing to avoid rstrip pitfalls
+            if size_str.endswith('GB'):
+                num = size_str[:-2].strip()
+                return float(num) * 1024.0  # GB -> MB
+            elif size_str.endswith('MB'):
+                num = size_str[:-2].strip()
+                return float(num)
+            elif size_str.endswith('KB'):
+                num = size_str[:-2].strip()
+                return float(num) / 1024.0
             else:
-                return float(size_str)
+                # Fallback: attempt to remove a trailing 'B' (bytes) and parse
+                if size_str.endswith('B'):
+                    num = size_str[:-1].strip()
+                else:
+                    num = size_str
+                return float(num)
         except (ValueError, AttributeError):
             return 0
 
