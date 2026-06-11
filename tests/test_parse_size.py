@@ -5,7 +5,8 @@ spec.loader.exec_module(mod)
 ImageMounter = getattr(mod, "ImageMounter")
 class TestParseSize(unittest.TestCase):
     def setUp(self):
-        self.im = ImageMounter()
+        # ImageMounter constructor expects an image_path; pass a harmless dummy
+        self.im = ImageMounter(image_path=pathlib.Path("/tmp/dummy.img"))
     def test_gb(self):
         self.assertAlmostEqual(self.im.parse_size("1GB"), 1024.0)
     def test_mb(self):
