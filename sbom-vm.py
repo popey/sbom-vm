@@ -103,11 +103,12 @@ class ImageMounter:
         if image_format == 'gzip':
             logger.info("Decompressing gzipped image")
             self.temp_image = Path(self.temp_dir) / f"{self.image_path.stem}.raw"
-            self._run_command(
-                ["gunzip", "-c", str(self.image_path)],
-                stdout=open(self.temp_image, 'wb'),
-                text=False
-            )
+            with open(self.temp_image, 'wb') as out:
+                self._run_command(
+                    ["gunzip", "-c", str(self.image_path)],
+                    stdout=out,
+                    text=False
+                )
             return self.temp_image
             
         elif image_format in ['vmdk', 'vhd', 'vpc']:
@@ -304,7 +305,7 @@ class ImageMounter:
             fs_type = self._run_command(
                 ["blkid", "-o", "value", "-s", "TYPE", self.mounted_partition]
             ).stdout.strip()
-        except:
+        except Exception:
             fs_type = "unknown"
         
         # Extract partition device name
