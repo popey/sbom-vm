@@ -1,0 +1,9 @@
+{
+  "last_run": "2026-06-12T13:28:15Z",
+  "comments_made": [12, 18, 13],
+  "created_branches": [
+    "repo-assist/fix-issue-13-parse-size",
+    "repo-assist/improve-tests-parse-size"
+  ],
+  "backlog_cursor": null
+}
