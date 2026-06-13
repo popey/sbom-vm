@@ -142,7 +142,9 @@ class TestImageGenerator:
 
     def create_raw_disk(self, size_mb: int = 1024) -> Path:
         """Create an empty raw disk image using fallocate."""
-        image_path = Path(tempfile.mktemp(prefix="disk_", suffix=".raw", dir=str(self.output_dir)))
+        tmp = tempfile.NamedTemporaryFile(prefix="disk_", suffix=".raw", dir=str(self.output_dir), delete=False)
+        image_path = Path(tmp.name)
+        tmp.close()
         
         self.logger.info(f"Creating {size_mb}MB raw disk image at {image_path}")
         self._run_command([
