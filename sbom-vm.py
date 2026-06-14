@@ -34,9 +34,15 @@ def setup_logging(image_path: Path) -> logging.Logger:
 logger = None  # Will be initialized in main()
 
 class ImageMounter:
-    def __init__(self, image_path: str, mount_point: str = "/mnt/image_analysis"):
+    def __init__(self, image_path: str, mount_point: str = None):
         self.image_path = Path(image_path)
-        self.mount_point = Path(mount_point)
+        # If no mount_point provided, create a unique temporary directory to avoid collisions
+        if mount_point:
+            self.mount_point = Path(mount_point)
+            self._created_mount_dir = False
+        else:
+            self.mount_point = Path(tempfile.mkdtemp(prefix="sbomvm_mount_"))
+            self._created_mount_dir = True
         self.nbd_device = "/dev/nbd0"
         self.mounted_partition = None
         self.temp_dir = None
@@ -349,6 +355,13 @@ class ImageMounter:
         if self.mount_point.is_mount():
             logger.info(f"Unmounting {self.mount_point}")
             self._run_command(["umount", str(self.mount_point)], check=False)
+            # If we created a private mount directory, remove it after unmount
+            if getattr(self, "_created_mount_dir", False) and self.mount_point.exists():
+                try:
+                    logger.info(f"Removing created mount directory: {self.mount_point}")
+                    shutil.rmtree(self.mount_point)
+                except Exception as e:
+                    logger.debug(f"Failed to remove mount directory {self.mount_point}: {e}")
         
         logger.info("Disconnecting NBD device")
         self._run_command(["qemu-nbd", "--disconnect", self.nbd_device], check=False)
