@@ -1,0 +1,1 @@
+2026-06-22T14:13:15Z UTC - Created branch repo-assist/fix-issue-10-file-handle-leak and draft PR to fix file-handle leak in sbom-vm.py (Closes #10). Added comment linking to branch. Syntax check passed (compileall). Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
