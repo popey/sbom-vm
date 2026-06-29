@@ -1,0 +1,9 @@
+2026-06-29T13:46: Repo Assist run actions
+- Created branch: repo-assist/fix-gzip-handle-2026-06-29
+- Committed change to sbom-vm.py to: use context manager for gunzip output; respect stdout/stderr in _run_command
+- Created draft PR: repo-assist/fix-gzip-handle-2026-06-29 (compare link: https://github.com/popey/sbom-vm/compare/main...repo-assist/fix-gzip-handle-2026-06-29)
+- Commented on issue #10 linking to PR and test status
+
+Notes:
+- Syntax check passed: python3 -m py_compile sbom-vm.py
+- No unit tests present in main branch; some repo-assist prepared test branches exist separately.
