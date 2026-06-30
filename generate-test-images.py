@@ -8,7 +8,7 @@ import logging
 import shutil
 import time
 import tempfile
-from typing import Optional, List, Dict
+from typing import Optional, List
 
 # Get the directory where the script is located
 SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -72,6 +72,8 @@ class TestImageGenerator:
     def __init__(self, output_dir: str = "test_images"):
         self.output_dir = SCRIPT_DIR / output_dir
         self.logger = logging.getLogger(__name__)
+        self.zfs_pool_name = None
+        self.zfs_altroot = None
         self.verify_commands()
         
         # Create output directory safely
@@ -142,7 +144,8 @@ class TestImageGenerator:
 
     def create_raw_disk(self, size_mb: int = 1024) -> Path:
         """Create an empty raw disk image using fallocate."""
-        image_path = Path(tempfile.mktemp(prefix="disk_", suffix=".raw", dir=str(self.output_dir)))
+        with tempfile.NamedTemporaryFile(prefix="disk_", suffix=".raw", dir=str(self.output_dir), delete=False) as image_file:
+            image_path = Path(image_file.name)
         
         self.logger.info(f"Creating {size_mb}MB raw disk image at {image_path}")
         self._run_command([
@@ -223,8 +226,8 @@ class TestImageGenerator:
                 for pool in pools.stdout.strip().split('\n'):
                     pool_name = pool.strip()
                     
-                    # Only cleanup pools we created (sbomtmp prefix)
-                    if pool_name.startswith("sbomtmp"):
+                    # Only clean up the pool created by this run.
+                    if self.zfs_pool_name and pool_name == self.zfs_pool_name:
                         self.logger.info(f"Cleaning up ZFS pool {pool_name}")
                         
                         try:
@@ -253,6 +256,10 @@ class TestImageGenerator:
 
         except Exception as e:
             self.logger.warning(f"Error during ZFS cleanup: {e}")
+        finally:
+            if self.zfs_altroot:
+                shutil.rmtree(self.zfs_altroot, ignore_errors=True)
+                self.zfs_altroot = None
 
     def _pool_exists(self, pool_name: str) -> bool:
         """Check if a ZFS pool exists."""
@@ -335,10 +342,6 @@ class TestImageGenerator:
             temp_dir_path = Path(temp_dir)
             mount_point = temp_dir_path / "mnt"
             
-            # Change to temp directory to avoid busy mount point issues
-            original_dir = os.getcwd()
-            os.chdir(temp_dir)
-            
             try:
                 # Create and partition raw disk
                 raw_image = self.create_raw_disk()
@@ -368,9 +371,6 @@ class TestImageGenerator:
                     if not self._ensure_loop_detached(loop_device):
                         raise RuntimeError(f"Failed to detach loop device {loop_device}")
                 
-                # Return to original directory before conversion
-                os.chdir(original_dir)
-                
                 # Convert to qcow2
                 qcow2_image = self.convert_to_qcow2(raw_image)
                 final_path = self.output_dir / f"{safe_name}.qcow2"
@@ -383,7 +383,6 @@ class TestImageGenerator:
                 
             except Exception as e:
                 self.logger.error(f"Failed during image generation: {str(e)}")
-                os.chdir(original_dir)
                 raise
 
     def create_filesystems(self, loop_device: str, fs_type: str):
@@ -394,8 +393,10 @@ class TestImageGenerator:
         
         if fs_type == "zfs":
             # Create a ZFS pool and filesystem structure with safeguards
-            pool_name = "sbomtmp"  # Unique name to avoid conflicts
-            altroot = "/tmp/sbom_zfs_tmp"  # Isolated mount point
+            pool_name = f"sbomtmp_{os.getpid()}_{int(time.time())}"
+            altroot = Path(tempfile.mkdtemp(prefix="sbom_zfs_"))
+            self.zfs_pool_name = pool_name
+            self.zfs_altroot = altroot
             
             # Create altroot directory
             os.makedirs(altroot, exist_ok=True)
@@ -405,7 +406,7 @@ class TestImageGenerator:
                 self._run_command([
                     "zpool", "create", "-f",
                     "-o", "ashift=12",     # Proper alignment for modern disks
-                    "-o", "altroot=" + altroot,  # Isolated mount point
+                    "-o", "altroot=" + str(altroot),  # Isolated mount point
                     "-O", "mountpoint=/",   # Root dataset mountpoint
                     "-O", "compression=on", # Common ZFS feature
                     "-O", "atime=off",      # Improve performance
@@ -422,6 +423,7 @@ class TestImageGenerator:
                 self.logger.error(f"Error creating ZFS pool: {e}")
                 # Attempt cleanup
                 self._run_command(["zpool", "destroy", "-f", pool_name], check=False)
+                shutil.rmtree(altroot, ignore_errors=True)
                 raise
                 
         else:
@@ -443,8 +445,7 @@ class TestImageGenerator:
         if fs_type == "zfs":
             # For ZFS, the filesystem should already be mounted at altroot
             # We'll just verify it's accessible
-            pool_name = "sbomtmp"
-            altroot = "/tmp/sbom_zfs_tmp"
+            altroot = self.zfs_altroot
             
             if not os.path.ismount(altroot):
                 raise RuntimeError(f"ZFS pool not mounted at expected location: {altroot}")

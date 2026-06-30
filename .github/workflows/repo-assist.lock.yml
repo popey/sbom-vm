@@ -90,8 +90,6 @@ on:
     types:
     - created
     - edited
-  schedule:
-  - cron: "6 */12 * * *"
   # steps: # Steps injected into pre-activation job
   # - id: check
     # env:

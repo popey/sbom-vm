@@ -17,7 +17,6 @@ description: |
   Always polite, constructive, and mindful of the project's goals.
 
 on:
-  schedule: every 12h
   workflow_dispatch:
     inputs:
       command:
@@ -83,16 +82,16 @@ safe-outputs:
     title-prefix: "[repo-assist] "
     labels: [automation, repo-assist]
     protected-files: fallback-to-issue
-    max: 4
+    max: 1
   push-to-pull-request-branch:
     target: "*"
     required-title-prefix: "[repo-assist] "
-    max: 4
+    max: 1
     protected-files: fallback-to-issue
   create-issue:
     title-prefix: "[repo-assist] "
     labels: [automation, repo-assist]
-    max: 4
+    max: 1
   update-issue:
     target: "*"
     required-title-prefix: "[repo-assist] "
