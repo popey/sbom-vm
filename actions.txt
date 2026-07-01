@@ -1,2 +1,4 @@
 2026-06-24T01:12:17Z - Created branch repo-assist/improve-fixes-2026-06-24 and draft PR to fix parse_size, tempfile.mktemp, file handle, bare except, and noisy debug commands. Commented on issue #10 linking the PR.
 PR compare: https://github.com/popey/sbom-vm/compare/main...repo-assist/improve-fixes-2026-06-24
+
+2026-07-01T13:12:16Z - Created branch repo-assist/fix-issue-15-cwd and draft PR branch; commented on issue #15 linking compare view. Compiled sbom-vm.py and generate-test-images.py with py_compile.
