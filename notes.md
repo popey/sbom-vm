@@ -8,3 +8,5 @@ Run 2026-06-05: Repo Assist actions
 Next steps:
 - Follow up if maintainers request a PR number or adjustments
 - Consider adding CONTRIBUTING.md and small unit tests for parse_size
+
+2026-07-02: gated debug mount diagnostics and added a minimal CI workflow; commented on #19 and #1; updated the July monthly summary.

@@ -1,6 +1,6 @@
-2026-06-04T13:27:01Z - Commented on issue #1 (CI: Add automation) - Repo Assist suggested adding a GitHub Actions workflow to run image generation and SBOM generation.
-2026-06-04T13:27:01Z - Commented on issue #2 (Docs: Add a contributing guide) - Repo Assist offered to open a baseline CONTRIBUTING.md PR.
-2026-06-09T01:16:31Z - Commented on issue #19 (Debug commands left in generate_sbom) - Repo Assist suggested removing or gating debug commands
-2026-06-29T01:24:21Z - Commented on issue #3 (Docs: Add a gif to the readme) - Suggested asciinema/vhs/gifski
-
-2026-07-01T13:12:16Z - Commented on issue #15 (generate_test_image os.chdir cleanup) - Repo Assist.
+1. 2026-06-04T13:27:01Z - Commented on issue #1 (CI: Add automation) - Repo Assist suggested adding a GitHub Actions workflow to run image generation and SBOM generation.
+2. 2026-06-04T13:27:01Z - Commented on issue #2 (Docs: Add a contributing guide) - Repo Assist offered to open a baseline CONTRIBUTING.md PR.
+3. 2026-06-09T01:16:31Z - Commented on issue #19 (Debug commands left in generate_sbom) - Repo Assist suggested removing or gating debug commands
+4. 2026-06-29T01:24:21Z - Commented on issue #3 (Docs: Add a gif to the readme) - Suggested asciinema/vhs/gifski
+5. 2026-07-01T13:12:16Z - Commented on issue #15 (generate_test_image os.chdir cleanup) - Repo Assist.
+6. 2026-07-02T01:16:02Z - Commented on issues #19 (debug mount diagnostics) and #1 (CI syntax check)
