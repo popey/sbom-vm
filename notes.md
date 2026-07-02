@@ -10,3 +10,4 @@ Next steps:
 - Consider adding CONTRIBUTING.md and small unit tests for parse_size
 
 2026-07-02: gated debug mount diagnostics and added a minimal CI workflow; commented on #19 and #1; updated the July monthly summary.
+13. 2026-07-02: opened the debug-diagnostics draft PR branch and refreshed the July monthly summary again.
