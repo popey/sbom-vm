@@ -13,3 +13,5 @@ Next steps:
 13. 2026-07-02: opened the debug-diagnostics draft PR branch and refreshed the July monthly summary again.
 2026-07-03: commented on #104 and refreshed the July monthly summary.
 2026-07-03: added configurable logging path support and tests on repo-assist/improve-logging-config-2026-07-03.
+
+2026-07-04: gated mount diagnostics behind SBOM_VM_DEBUG_MOUNT with tests on repo-assist/fix-debug-mount-2026-07-04, added a minimal CI syntax-check workflow on repo-assist/eng-ci-syntax-check-2026-07-04, and refreshed the July monthly summary.
