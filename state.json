@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-07-05T14:08:36Z",
+  "last_run": "2026-07-07T04:12:33Z",
   "comments_made": [
     12,
     18,
@@ -10,7 +10,9 @@
     15,
     1,
     104,
-    101
+    101,
+    14,
+    105
   ],
   "created_branches": [
     "repo-assist/fix-issue-13-parse-size",
@@ -27,8 +29,10 @@
     "repo-assist/fix-debug-mount-2026-07-04",
     "repo-assist/eng-ci-syntax-check-2026-07-04",
     "repo-assist/fix-issue-14-tempfile-mktemp-2026-07-05",
-    "repo-assist/eng-add-ci-2026-07-05"
+    "repo-assist/eng-add-ci-2026-07-05",
+    "repo-assist/fix-issue-14-atomic-tempfile",
+    "repo-assist/improve-logging-handler-reset"
   ],
   "backlog_cursor": null,
-  "notes": "2026-07-04: gated mount diagnostics behind SBOM_VM_DEBUG_MOUNT with tests on repo-assist/fix-debug-mount-2026-07-04, added a minimal CI syntax-check workflow on repo-assist/eng-ci-syntax-check-2026-07-04, and refreshed the July monthly summary."
+  "notes": "2026-07-07: fixed the tempfile race in generate-test-images.py on repo-assist/fix-issue-14-atomic-tempfile, made setup_logging idempotent on repo-assist/improve-logging-handler-reset, commented on #14 and #105, and refreshed the July monthly summary."
 }
