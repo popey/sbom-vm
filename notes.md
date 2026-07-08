@@ -18,3 +18,5 @@ Next steps:
 2026-07-05: fixed the tempfile race in generate-test-images.py on repo-assist/fix-issue-14-tempfile-mktemp-2026-07-05, added a minimal CI syntax-check workflow on repo-assist/eng-add-ci-2026-07-05, commented on #101, and refreshed the July monthly summary.
 
 2026-07-07: fixed the tempfile race, made setup_logging idempotent, commented on #14 and #105, and refreshed the July monthly summary.
+
+2026-07-08: added .img fallback support on repo-assist/fix-issue-5-img-support, commented on #5, and refreshed the July monthly summary.
