@@ -20,3 +20,4 @@ Next steps:
 2026-07-07: fixed the tempfile race, made setup_logging idempotent, commented on #14 and #105, and refreshed the July monthly summary.
 
 2026-07-08: added .img fallback support on repo-assist/fix-issue-5-img-support, commented on #5, and refreshed the July monthly summary.
+2026-07-11: fixed `.img` fallback handling with a regression test, commented on #5, and refreshed the July monthly summary.
