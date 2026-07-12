@@ -4,3 +4,4 @@ PR compare: https://github.com/popey/sbom-vm/compare/main...repo-assist/improve-
 2026-07-01T13:12:16Z - Created branch repo-assist/fix-issue-15-cwd and draft PR branch; commented on issue #15 linking compare view. Compiled sbom-vm.py and generate-test-images.py with py_compile.
 2026-07-03: commented on #104 and updated the July monthly summary issue.
 2026-07-07: fixed the tempfile race, made setup_logging idempotent, commented on #14 and #105, and refreshed the July monthly summary.
+2026-07-12: fixed the mount-point collision in sbom-vm.py on repo-assist/fix-issue-16-temp-mount-2026-07-12, added a Python syntax/unit-test workflow, commented on #16 and #138, and refreshed the July monthly summary.
