@@ -1,9 +1,1 @@
-2026-06-24T01:12:17Z - Created branch repo-assist/improve-fixes-2026-06-24 and draft PR to fix parse_size, tempfile.mktemp, file handle, bare except, and noisy debug commands. Commented on issue #10 linking the PR.
-PR compare: https://github.com/popey/sbom-vm/compare/main...repo-assist/improve-fixes-2026-06-24
-
-2026-07-01T13:12:16Z - Created branch repo-assist/fix-issue-15-cwd and draft PR branch; commented on issue #15 linking compare view. Compiled sbom-vm.py and generate-test-images.py with py_compile.
-2026-07-03: commented on #104 and updated the July monthly summary issue.
-2026-07-07: fixed the tempfile race, made setup_logging idempotent, commented on #14 and #105, and refreshed the July monthly summary.
-2026-07-12: fixed the mount-point collision in sbom-vm.py on repo-assist/fix-issue-16-temp-mount-2026-07-12, added a Python syntax/unit-test workflow, commented on #16 and #138, and refreshed the July monthly summary.
-2026-07-14: commented on #121 and #113, prepared branches for logging-config and mktemp fixes, and refreshed the July monthly summary.
-2026-07-14: commented on #102 with a concise monthly summary update after the body refresh path was unavailable.
+2026-07-14: commented on #113 and #121; prepared the mktemp and logging branches; updated the July monthly summary.
