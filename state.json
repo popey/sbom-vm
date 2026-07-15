@@ -50,8 +50,10 @@
     "repo-assist/improve-logging-config-2026-07-14",
     "repo-assist/fix-issue-113-mktemp-2026-07-14",
     "repo-assist/fix-issue-13-parse-size-2026-07-15",
-    "repo-assist/improve-sbom-generation-performance-2026-07-15"
+    "repo-assist/improve-sbom-generation-performance-2026-07-15",
+    "repo-assist/perf-cache-fs-type-2026-07-15",
+    "repo-assist/eng-ci-python-syntax-2026-07-15"
   ],
-  "last_run": "2026-07-15T03:22:03Z",
-  "notes": "2026-07-15: commented on #2; prepared parse_size and SBOM performance branches; updated the July monthly summary."
+  "last_run": "2026-07-15T14:03:20Z",
+  "notes": "2026-07-15: commented on #13; prepared parse_size, performance, and CI branches; updated the July monthly summary."
 }
