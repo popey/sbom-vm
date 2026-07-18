@@ -20,7 +20,8 @@
     113,
     121,
     102,
-    2
+    2,
+    114
   ],
   "created_branches": [
     "repo-assist/fix-issue-13-parse-size",
@@ -56,6 +57,6 @@
     "repo-assist/fix-issue-13-parse-size-2026-07-17",
     "repo-assist/fix-parse-size-ci-2026-07-18"
   ],
-  "last_run": "2026-07-18T03:20:25Z",
-  "notes": "2026-07-17: commented on #13; fixed parse_size suffix handling, added regression tests, and updated the July monthly summary."
+  "last_run": "2026-07-18T13:41:49Z",
+  "notes": "2026-07-18: commented on #114; prepared perf-cache-fs-type and improve-cli-usage branches, and updated the July monthly summary."
 }
