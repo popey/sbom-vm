@@ -304,7 +304,7 @@ class ImageMounter:
             fs_type = self._run_command(
                 ["blkid", "-o", "value", "-s", "TYPE", self.mounted_partition]
             ).stdout.strip()
-        except:
+        except Exception:
             fs_type = "unknown"
         
         # Extract partition device name
