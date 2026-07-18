@@ -1,1 +1,2 @@
 2026-07-15: commented on #13; prepared parse_size, performance, and CI branches; updated the July monthly summary.
+2026-07-18: fixed exact parse_size suffix handling, added regression tests and CI, and commented on #13. PR creation was not available, so the change was left on branch repo-assist/fix-parse-size-ci-2026-07-18.
