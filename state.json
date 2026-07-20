@@ -56,8 +56,9 @@
     "repo-assist/eng-ci-python-syntax-2026-07-15",
     "repo-assist/fix-issue-13-parse-size-2026-07-17",
     "repo-assist/fix-parse-size-ci-2026-07-18",
-    "repo-assist/fix-zfs-pool-2026-07-19"
+    "repo-assist/fix-zfs-pool-2026-07-19",
+    "repo-assist/eng-add-ci-syntax"
   ],
-  "last_run": "2026-07-19T03:41:31Z",
+  "last_run": "2026-07-20T03:54:54.053+00:00",
   "notes": "2026-07-18: commented on #114; prepared perf-cache-fs-type and improve-cli-usage branches, and updated the July monthly summary."
 }

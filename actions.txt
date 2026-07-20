@@ -1,1 +1,2 @@
 2026-07-15: commented on #13; prepared parse_size, performance, and CI branches; updated the July monthly summary.
+2026-07-20: commented on #13; prepared parse_size fix branch and lightweight CI branch; updated the July monthly summary.

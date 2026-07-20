@@ -2,3 +2,4 @@
 
 - 2026-07-17: parsed-size suffix bug fixed; regression tests added; monthly summary updated.
 - 2026-07-19: fixed ZFS pool naming collisions, added syntax CI, commented on #18, and updated the July monthly summary.
+- 2026-07-20: fixed exact size suffix parsing, added regression coverage, and prepared a minimal CI workflow.

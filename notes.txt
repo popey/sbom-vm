@@ -1,1 +1,2 @@
 1. 2026-07-18: commented on #114; prepared perf-cache-fs-type and improve-cli-usage branches, and updated the July monthly summary.
+- 2026-07-20: fixed parse_size and added lightweight CI on separate branches.
