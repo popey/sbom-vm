@@ -6,16 +6,20 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+import re
 import time
 import shutil
 import tempfile
 
 def setup_logging(image_path: Path) -> logging.Logger:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = f"{timestamp}_{image_path.stem}.log"
+    log_dir = Path(os.environ.get("SBOM_VM_LOG_DIR", "."))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"{timestamp}_{image_path.stem}.log"
     
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
+    logger.handlers.clear()
     
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     
@@ -34,36 +38,56 @@ def setup_logging(image_path: Path) -> logging.Logger:
 logger = None  # Will be initialized in main()
 
 class ImageMounter:
-    def __init__(self, image_path: str, mount_point: str = "/mnt/image_analysis"):
+    def __init__(self, image_path: str, mount_point: str = None):
         self.image_path = Path(image_path)
-        self.mount_point = Path(mount_point)
-        self.nbd_device = "/dev/nbd0"
+        self.mount_point = Path(mount_point) if mount_point else None
+        self.nbd_device = None
         self.mounted_partition = None
         self.temp_dir = None
         self.temp_image = None
+        self.imported_zfs_pool = None
 
     def parse_size(self, size_str):
-        """Parse size strings with units into numeric values."""
-        try:
-            size_str = str(size_str).strip().upper()
-            if 'GB' in size_str:
-                return float(size_str.rstrip('GB')) * 1024
-            elif 'MB' in size_str:
-                return float(size_str.rstrip('MB'))
-            elif 'KB' in size_str:
-                return float(size_str.rstrip('KB')) / 1024
-            else:
-                return float(size_str)
-        except (ValueError, AttributeError):
+        """Parse size strings with units into MiB."""
+        if size_str is None:
             return 0
+
+        match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGT]?I?B?)?\s*", str(size_str), re.IGNORECASE)
+        if not match:
+            return 0
+
+        value = float(match.group(1))
+        unit = (match.group(2) or "MB").upper()
+        multipliers = {
+            "": 1,
+            "B": 1 / (1024 * 1024),
+            "K": 1 / 1024,
+            "KB": 1 / 1024,
+            "KIB": 1 / 1024,
+            "M": 1,
+            "MB": 1,
+            "MIB": 1,
+            "G": 1024,
+            "GB": 1024,
+            "GIB": 1024,
+            "T": 1024 * 1024,
+            "TB": 1024 * 1024,
+            "TIB": 1024 * 1024,
+        }
+        return value * multipliers.get(unit, 0)
 
     def _run_command(self, command: list, check: bool = True, **kwargs) -> subprocess.CompletedProcess:
         try:
-            result = subprocess.run(command, check=check, capture_output=True, text=True, **kwargs)
-            return result
+            run_kwargs = kwargs.copy()
+            has_redirect = "stdout" in run_kwargs or "stderr" in run_kwargs
+            run_kwargs.setdefault("text", not has_redirect)
+            if not has_redirect:
+                run_kwargs["capture_output"] = True
+            return subprocess.run(command, check=check, **run_kwargs)
         except subprocess.CalledProcessError as e:
             logger.error(f"Command failed: {' '.join(command)}")
-            logger.error(f"Error output: {e.stderr}")
+            if e.stderr:
+                logger.error(f"Error output: {e.stderr}")
             raise
 
     def _detect_image_format(self) -> str:
@@ -98,16 +122,18 @@ class ImageMounter:
     def _prepare_image(self) -> Path:
         """Prepare image for mounting, converting if necessary."""
         self.temp_dir = tempfile.mkdtemp(prefix='sbomvm_')
+        if self.mount_point is None:
+            self.mount_point = Path(tempfile.mkdtemp(prefix='sbomvm_mount_', dir=self.temp_dir))
         image_format = self._detect_image_format()
         
         if image_format == 'gzip':
             logger.info("Decompressing gzipped image")
             self.temp_image = Path(self.temp_dir) / f"{self.image_path.stem}.raw"
-            self._run_command(
-                ["gunzip", "-c", str(self.image_path)],
-                stdout=open(self.temp_image, 'wb'),
-                text=False
-            )
+            with open(self.temp_image, 'wb') as output:
+                self._run_command(
+                    ["gunzip", "-c", str(self.image_path)],
+                    stdout=output,
+                )
             return self.temp_image
             
         elif image_format in ['vmdk', 'vhd', 'vpc']:
@@ -129,9 +155,18 @@ class ImageMounter:
         self._run_command(["modprobe", "nbd", "max_part=8"])
         time.sleep(1)
 
+    def _find_free_nbd_device(self) -> str:
+        for device in sorted(Path("/dev").glob("nbd*")):
+            if device.name.startswith("nbd") and device.name[3:].isdigit():
+                result = self._run_command(["qemu-nbd", "--check", str(device)], check=False)
+                if result.returncode != 0:
+                    return str(device)
+        raise RuntimeError("No free /dev/nbd device found")
+
     def connect_image(self):
         prepared_image = self._prepare_image()
-        logger.info(f"Connecting image {prepared_image} to NBD device")
+        self.nbd_device = self._find_free_nbd_device()
+        logger.info(f"Connecting image {prepared_image} to NBD device {self.nbd_device}")
         self._run_command(["qemu-nbd", "--connect", self.nbd_device, str(prepared_image)])
         # Increase delay to allow NBD device to stabilize
         time.sleep(2)
@@ -297,6 +332,7 @@ class ImageMounter:
             "zpool", "import", "-f", "-d", zfs_partition,
             "-R", str(self.mount_point), "-o", "readonly=on", pool_name
         ])
+        self.imported_zfs_pool = pool_name
 
     def generate_sbom(self):
         # Get filesystem type
@@ -304,7 +340,7 @@ class ImageMounter:
             fs_type = self._run_command(
                 ["blkid", "-o", "value", "-s", "TYPE", self.mounted_partition]
             ).stdout.strip()
-        except:
+        except subprocess.CalledProcessError:
             fs_type = "unknown"
         
         # Extract partition device name
@@ -318,9 +354,9 @@ class ImageMounter:
         logger.info(f"Generating SBOM for mounted filesystem at {self.mount_point}")
         logger.info(f"Filesystem type: {fs_type}")
         
-        # Debug mount contents
-        self._run_command(["ls", "-la", str(self.mount_point)])
-        self._run_command(["mount"])
+        if os.environ.get("SBOM_VM_DEBUG_MOUNT"):
+            self._run_command(["ls", "-la", str(self.mount_point)])
+            self._run_command(["mount"])
         
         # Generate SBOM
         self._run_command([
@@ -335,23 +371,17 @@ class ImageMounter:
     def cleanup(self):
         logger.info("Starting cleanup")
         
-        # Export ZFS pools
-        try:
-            pools = self._run_command(["zpool", "list", "-H"], check=False)
-            if pools.returncode == 0 and pools.stdout.strip():
-                for pool in pools.stdout.strip().split('\n'):
-                    pool_name = pool.split()[0]
-                    logger.info(f"Exporting ZFS pool {pool_name}")
-                    self._run_command(["zpool", "export", pool_name], check=False)
-        except Exception as e:
-            logger.debug(f"Error during ZFS cleanup: {e}")
+        if self.imported_zfs_pool:
+            logger.info(f"Exporting ZFS pool {self.imported_zfs_pool}")
+            self._run_command(["zpool", "export", self.imported_zfs_pool], check=False)
 
-        if self.mount_point.is_mount():
+        if self.mount_point and self.mount_point.is_mount():
             logger.info(f"Unmounting {self.mount_point}")
             self._run_command(["umount", str(self.mount_point)], check=False)
         
-        logger.info("Disconnecting NBD device")
-        self._run_command(["qemu-nbd", "--disconnect", self.nbd_device], check=False)
+        if self.nbd_device:
+            logger.info("Disconnecting NBD device")
+            self._run_command(["qemu-nbd", "--disconnect", self.nbd_device], check=False)
         
         logger.info("Removing NBD kernel module")
         self._run_command(["rmmod", "nbd"], check=False)
