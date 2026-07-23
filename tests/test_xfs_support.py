@@ -38,6 +38,9 @@ Number  Start   End     Size    File system  Name  Flags
         selected = self.mounter.find_filesystem_partition()
 
         self.assertEqual(selected, "/dev/nbd0p2")
+        self.mounter._run_command.assert_called_once_with(
+            ["parted", "-s", "/dev/nbd0", "print"]
+        )
 
     def test_mounts_xfs_read_only_without_replaying_the_log(self):
         with tempfile.TemporaryDirectory() as mount_dir:
