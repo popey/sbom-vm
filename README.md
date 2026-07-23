@@ -61,13 +61,14 @@ The following packages are required:
 * ntfs-3g - For Windows NTFS filesystem support
 * hfsprogs - For MacOS HFS+ filesystem support
 * apfs-dkms & apfsprogs - For MacOS APFS filesystem support
+* xfsprogs - For XFS filesystem support
 * zfsutils-linux - For ZFS filesystem support
 
 On Ubuntu 24.04 these can be installed via:
 
 ```bash
 $ snap install syft
-$ sudo apt install qemu-utils gdisk fdisk parted util-linux ntfs-3g hfsprogs apfs-dkms apfsprogs zfsutils-linux
+$ sudo apt install qemu-utils gdisk fdisk parted util-linux ntfs-3g hfsprogs apfs-dkms apfsprogs xfsprogs zfsutils-linux
 ```
 
 ## Installation
