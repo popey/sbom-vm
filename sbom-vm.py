@@ -208,7 +208,7 @@ class ImageMounter:
                 # Find filesystem type - it's usually after the size
                 fs_type = ''
                 for i, part in enumerate(parts):
-                    if part.lower() in ['ext3', 'ext4', 'ntfs', 'hfsplus', 'apfs', 'fat32', 'vfat', 'btrfs']:
+                    if part.lower() in ['ext3', 'ext4', 'xfs', 'ntfs', 'hfsplus', 'apfs', 'fat32', 'vfat', 'btrfs']:
                         fs_type = part.lower()
                         break
                 
@@ -232,11 +232,12 @@ class ImageMounter:
                     continue
                 
                 # Check filesystem type
-                if fs_type and fs_type.lower() in ['ntfs', 'hfsplus', 'apfs', 'ext3', 'ext4', 'vfat', 'fat32', 'btrfs']:
+                if fs_type and fs_type.lower() in ['ntfs', 'hfsplus', 'apfs', 'ext3', 'ext4', 'xfs', 'vfat', 'fat32', 'btrfs']:
                     # Assign priority based on filesystem type
                     priority = {
                         'ext4': 3,    # Highest priority for Linux root
                         'ext3': 3,    # High priority for Linux
+                        'xfs': 3,     # High priority for Linux
                         'btrfs': 3,   # High priority for Linux root
                         'ntfs': 2,    # High priority for Windows
                         'hfsplus': 2, # High priority for macOS
@@ -253,9 +254,9 @@ class ImageMounter:
                         blkid_result = self._run_command(["blkid", partition], check=False)
                         if blkid_result.returncode == 0:
                             blkid_output = blkid_result.stdout.lower()
-                            for fs in ['ntfs', 'hfsplus', 'apfs', 'ext4', 'ext3', 'vfat', 'zfs_member', 'btrfs']:
+                            for fs in ['ntfs', 'hfsplus', 'apfs', 'ext4', 'ext3', 'xfs', 'vfat', 'zfs_member', 'btrfs']:
                                 if fs in blkid_output:
-                                    priority = 3 if fs in ['ext4', 'ext3', 'btrfs'] else 2 if fs in ['ntfs', 'hfsplus', 'apfs'] else 1
+                                    priority = 3 if fs in ['ext4', 'ext3', 'xfs', 'btrfs'] else 2 if fs in ['ntfs', 'hfsplus', 'apfs'] else 1
                                     partitions.append((partition, fs, size, priority))
                                     logger.info(f"Found usable partition {partition} of type {fs} (via blkid)")
                                     break
@@ -300,6 +301,9 @@ class ImageMounter:
         elif fs_type == "apfs":
             self._run_command(["modprobe", "apfs"], check=False)
             mount_opts = ["mount", "-t", "apfs", "-o", "ro"]
+            self._run_command(mount_opts + [self.mounted_partition, str(self.mount_point)])
+        elif fs_type == "xfs":
+            mount_opts = ["mount", "-t", "xfs", "-o", "ro,norecovery"]
             self._run_command(mount_opts + [self.mounted_partition, str(self.mount_point)])
         else:
             mount_opts = ["mount", "-o", "ro"]

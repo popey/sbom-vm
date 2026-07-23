@@ -10,7 +10,7 @@ In its current state, this script leverages common Linux utilities (gdisk, qemu-
 * Supports multiple VM disk formats (qcow2, vmdk)
 * Automatic detection and mounting of common filesystems:
   * Windows (NTFS)
-  * Linux (ext4, ZFS, BTRFS)
+  * Linux (ext3, ext4, xfs, ZFS, BTRFS)
   * macOS (HFS+, APFS)
   * BSD (ZFS)
 * Safe, non-destructive SBOM generation using Syft
