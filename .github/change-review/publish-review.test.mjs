@@ -99,6 +99,27 @@ test('only requests changes when blocking mode has findings', () => {
     },
   );
   assert.equal(withFinding.event, 'REQUEST_CHANGES');
+
+  const withUnplacedFinding = buildReviewRequest(
+    reviewFixture({
+      summary: {
+        unplacedFindings: [
+          {
+            path: 'sbom-vm.py',
+            line: 5,
+            side: 'RIGHT',
+            body: 'Unplaced finding',
+          },
+        ],
+      },
+    }),
+    {
+      reviewAction: 'request-changes-on-findings',
+      expectedHeadSha: HEAD_SHA,
+    },
+  );
+  assert.equal(withUnplacedFinding.event, 'REQUEST_CHANGES');
+  assert.equal(withUnplacedFinding.commentCount, 0);
 });
 
 test('rejects a review generated for a different head SHA', () => {
