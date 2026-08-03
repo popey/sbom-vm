@@ -1,7 +1,7 @@
 name: Change Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, ready_for_review]
   issue_comment:
     types: [created]
@@ -19,28 +19,31 @@ concurrency:
 jobs:
   change-review:
     if: >-
-      (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+      (github.event_name != 'pull_request_target' || !github.event.pull_request.draft) &&
       (github.event_name != 'issue_comment' ||
        (github.event.issue.pull_request &&
-        startsWith(github.event.comment.body, '@tessl-change-review') &&
+        github.event.comment.body == '@tessl-change-review' &&
         (github.event.comment.author_association == 'OWNER' ||
          github.event.comment.author_association == 'MEMBER' ||
          github.event.comment.author_association == 'COLLABORATOR' ||
          github.event.comment.author_association == 'ADMIN')))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     env:
       REPO: ${{ github.repository }}
       REVIEW_BASE: origin/main
-      REVIEW_ACTION: comment
       REVIEW_OUTPUT: change-review.json
       REVIEW_SKILLS: >-
         tessl/code-review#review-code-legibility
         tessl/code-review#review-test-risk
         tessl/code-review#review-security-risks
+    outputs:
+      pr-number: ${{ steps.pr.outputs.pr-number }}
+      head-sha: ${{ steps.pr.outputs.head-sha }}
+      should-run: ${{ steps.review-policy.outputs.should-run }}
 
     steps:
       - name: Resolve PR
@@ -81,23 +84,6 @@ jobs:
           echo "Refusing to run privileged change review on a cross-repository PR." >&2
           exit 1
 
-      - name: Checkout workflow support
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          path: _workflow
-          sparse-checkout: |
-            .github/change-review/publish-review.mjs
-          persist-credentials: false
-
-      - name: Checkout PR head
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.pr.outputs.head-sha }}
-          path: _pr
-          fetch-depth: 0
-          persist-credentials: false
-
       - name: Check review policy
         id: review-policy
         env:
@@ -127,15 +113,31 @@ jobs:
             echo "should-run=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Setup Node for publisher
+      - name: Checkout PR head
         if: steps.review-policy.outputs.should-run == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/checkout@v4
         with:
-          node-version: '22'
+          ref: ${{ steps.pr.outputs.head-sha }}
+          path: _pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reject PR-controlled Tessl configuration
+        if: steps.review-policy.outputs.should-run == 'true'
+        working-directory: _pr
+        run: |
+          set -euo pipefail
+
+          CHANGED_CONFIG=$(git diff --name-only "$REVIEW_BASE"...HEAD -- tessl.json .tessl)
+          if [ -n "$CHANGED_CONFIG" ]; then
+            echo "Refusing to use PR-controlled Tessl configuration:" >&2
+            echo "$CHANGED_CONFIG" >&2
+            exit 1
+          fi
 
       - name: Setup Tessl
         if: steps.review-policy.outputs.should-run == 'true'
-        uses: tesslio/setup-tessl@v2
+        uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2
         with:
           token: ${{ secrets.TESSL_TOKEN }}
 
@@ -167,23 +169,67 @@ jobs:
             "${skill_args[@]}" \
             --base "$REVIEW_BASE"
 
-      - name: Publish PR review
+      - name: Upload review data for publisher
         if: steps.review-policy.outputs.should-run == 'true'
-        working-directory: _pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
-          REVIEW_ACTION: ${{ env.REVIEW_ACTION }}
-          REVIEW_OUTPUT: ${{ env.REVIEW_OUTPUT }}
-          OUT: review-publish.json
-        run: node ../_workflow/.github/change-review/publish-review.mjs
-
-      - name: Upload artifacts
-        if: always() && steps.review-policy.outputs.should-run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: change-review-${{ steps.pr.outputs.head-sha }}
+          name: change-review-raw-${{ steps.pr.outputs.head-sha }}
+          path: _pr/${{ env.REVIEW_OUTPUT }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-review:
+    needs: change-review
+    if: needs.change-review.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REPO: ${{ github.repository }}
+      REVIEW_ACTION: comment
+
+    steps:
+      - name: Checkout trusted publisher
+        uses: actions/checkout@v4
+        with:
+          # pull_request_target and comment-triggered workflows load executable
+          # support only from the trusted default branch.
+          ref: ${{ github.event.repository.default_branch }}
+          path: _workflow
+          sparse-checkout: |
+            .github/change-review/publish-review.mjs
+          persist-credentials: false
+
+      - name: Setup Node for publisher
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download review data
+        uses: actions/download-artifact@v4
+        with:
+          name: change-review-raw-${{ needs.change-review.outputs.head-sha }}
+          path: _review
+
+      - name: Publish PR review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.change-review.outputs.pr-number }}
+          EXPECTED_HEAD_SHA: ${{ needs.change-review.outputs.head-sha }}
+          REVIEW_ACTION: ${{ env.REVIEW_ACTION }}
+          REVIEW_OUTPUT: _review/change-review.json
+          OUT: _review/review-publish.json
+        run: node _workflow/.github/change-review/publish-review.mjs
+
+      - name: Upload publication record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-review-${{ needs.change-review.outputs.head-sha }}
           path: |
-            _pr/${{ env.REVIEW_OUTPUT }}
-            _pr/review-publish.json
+            _review/change-review.json
+            _review/review-publish.json
           if-no-files-found: ignore
+          retention-days: 7
