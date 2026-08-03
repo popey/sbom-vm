@@ -213,7 +213,25 @@ jobs:
           name: change-review-raw-${{ needs.change-review.outputs.head-sha }}
           path: _review
 
+      - name: Verify PR head is still current
+        id: freshness
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.change-review.outputs.pr-number }}
+          EXPECTED_HEAD_SHA: ${{ needs.change-review.outputs.head-sha }}
+        run: |
+          set -euo pipefail
+
+          CURRENT_HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
+          if [ "$CURRENT_HEAD_SHA" != "$EXPECTED_HEAD_SHA" ]; then
+            echo "should-publish=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping stale review for $EXPECTED_HEAD_SHA; PR now points to $CURRENT_HEAD_SHA"
+          else
+            echo "should-publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish PR review
+        if: steps.freshness.outputs.should-publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ needs.change-review.outputs.pr-number }}
