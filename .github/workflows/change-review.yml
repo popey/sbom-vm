@@ -226,6 +226,8 @@ jobs:
           if [ "$CURRENT_HEAD_SHA" != "$EXPECTED_HEAD_SHA" ]; then
             echo "should-publish=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Skipping stale review for $EXPECTED_HEAD_SHA; PR now points to $CURRENT_HEAD_SHA"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body \
+              "Tessl change review skipped because the PR changed during analysis. Comment \`@tessl-change-review\` to review the current head."
           else
             echo "should-publish=true" >> "$GITHUB_OUTPUT"
           fi
