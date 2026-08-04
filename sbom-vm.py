@@ -37,7 +37,8 @@ def setup_logging(image_path: Path) -> logging.Logger:
 
 logger = None  # Will be initialized in main()
 
-RAW_IMAGE_SUFFIXES = {'.ami', '.img', '.raw'}
+RAW_FALLBACK_SUFFIXES = {'.ami', '.img', '.raw'}
+GZIP_FALLBACK_SUFFIXES = {'.ami', '.raw'}
 
 class ImageMounter:
     def __init__(self, image_path: str, mount_point: str = None):
@@ -110,14 +111,14 @@ class ImageMounter:
         suffix = self.image_path.suffix.lower()
         if suffix == '.vmdk':
             return 'vmdk'
-        elif suffix in RAW_IMAGE_SUFFIXES:
-            # Check if gzipped
-            try:
-                with open(self.image_path, 'rb') as f:
-                    if f.read(2).startswith(b'\x1f\x8b'):
-                        return 'gzip'
-            except OSError as e:
-                logger.warning(f"Failed to check if file is gzipped: {e}")
+        elif suffix in RAW_FALLBACK_SUFFIXES:
+            if suffix in GZIP_FALLBACK_SUFFIXES:
+                try:
+                    with open(self.image_path, 'rb') as f:
+                        if f.read(2).startswith(b'\x1f\x8b'):
+                            return 'gzip'
+                except OSError as e:
+                    logger.warning(f"Failed to check if file is gzipped: {e}")
 
             logger.info(f"Using raw format fallback for {suffix} image")
             return 'raw'

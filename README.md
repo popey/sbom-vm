@@ -7,7 +7,7 @@ In its current state, this script leverages common Linux utilities (gdisk, qemu-
 ## Features
 
 * Read-only mounting of VM disk images via qemu-nbd
-* Supports multiple disk image formats (raw, `.img`, AMI, qcow2, vmdk)
+* Supports raw disk images (including `.img` and `.ami` suffix fallbacks), qcow2, and vmdk
 * Automatic detection and mounting of common filesystems:
   * Windows (NTFS)
   * Linux (ext3, ext4, xfs, ZFS, BTRFS)
@@ -35,7 +35,7 @@ Here's what I envisage for an MVP (Minimum Viable Product), to generate SBOMs fr
 
 ### MVP
 
-* Examine common disk image formats (raw, img, ami, qcow2, vmdk)
+* Examine common disk image formats (raw, including `.img` and `.ami` suffix fallbacks; qcow2; vmdk)
 * Mount common partition types (ntfs, hfsplus, apfs, ext4, vfat, zfs)
 * Launch Syft with appropriate options to generate an SBOM
 
