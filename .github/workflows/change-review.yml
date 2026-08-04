@@ -1,0 +1,255 @@
+name: Change Review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: PR number to review
+        required: true
+        type: string
+
+concurrency:
+  group: change-review-${{ github.event.issue.number || github.event.pull_request.number || github.event.inputs['pr-number'] }}
+  cancel-in-progress: ${{ github.event_name != 'issue_comment' }}
+
+jobs:
+  change-review:
+    if: >-
+      (github.event_name != 'pull_request_target' || !github.event.pull_request.draft) &&
+      (github.event_name != 'issue_comment' ||
+       (github.event.issue.pull_request &&
+        github.event.comment.body == '@tessl-change-review' &&
+        (github.event.comment.author_association == 'OWNER' ||
+         github.event.comment.author_association == 'MEMBER' ||
+         github.event.comment.author_association == 'COLLABORATOR' ||
+         github.event.comment.author_association == 'ADMIN')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      REPO: ${{ github.repository }}
+      REVIEW_BASE: origin/main
+      REVIEW_OUTPUT: change-review.json
+      REVIEW_SKILLS: >-
+        tessl/code-review#review-code-legibility
+        tessl/code-review#review-test-risk
+        tessl/code-review#review-security-risks
+    outputs:
+      pr-number: ${{ steps.pr.outputs.pr-number }}
+      head-sha: ${{ steps.pr.outputs.head-sha }}
+      should-run: ${{ steps.review-policy.outputs.should-run }}
+
+    steps:
+      - name: Resolve PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR_NUMBER: ${{ github.event.inputs['pr-number'] }}
+          COMMENT_PR_NUMBER: ${{ github.event.issue.number }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_IS_CROSS_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "issue_comment" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              PR_NUMBER="$INPUT_PR_NUMBER"
+            else
+              PR_NUMBER="$COMMENT_PR_NUMBER"
+            fi
+            PR_JSON=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid,isCrossRepository)
+            HEAD_SHA=$(jq -r .headRefOid <<< "$PR_JSON")
+            IS_CROSS_REPOSITORY=$(jq -r .isCrossRepository <<< "$PR_JSON")
+          else
+            PR_NUMBER="$EVENT_PR_NUMBER"
+            HEAD_SHA="$EVENT_HEAD_SHA"
+            IS_CROSS_REPOSITORY="$EVENT_IS_CROSS_REPOSITORY"
+          fi
+
+          echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head-sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "is-cross-repository=$IS_CROSS_REPOSITORY" >> "$GITHUB_OUTPUT"
+
+      - name: Reject cross-repository PRs
+        if: steps.pr.outputs.is-cross-repository == 'true'
+        run: |
+          echo "Refusing to run privileged change review on a cross-repository PR." >&2
+          exit 1
+
+      - name: Check review policy
+        id: review-policy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "issue_comment" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "should-run=true" >> "$GITHUB_OUTPUT"
+            echo "Explicit human request; bypassing automatic one-review policy."
+            exit 0
+          fi
+
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews" > reviews.json
+          COUNT=$(jq -s '
+            [ .[][]
+              | select(.user.login == "github-actions[bot]")
+              | select((.body // "") | contains("<!-- tessl-change-review -->"))
+            ] | length' reviews.json)
+
+          if [ "$COUNT" -ge 1 ]; then
+            echo "should-run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: $COUNT existing Tessl review(s); automatic review already ran."
+          else
+            echo "should-run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR head
+        if: steps.review-policy.outputs.should-run == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head-sha }}
+          path: _pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reject PR-controlled Tessl configuration
+        if: steps.review-policy.outputs.should-run == 'true'
+        working-directory: _pr
+        run: |
+          set -euo pipefail
+
+          CHANGED_CONFIG=$(git diff --name-only "$REVIEW_BASE"...HEAD -- tessl.json .tessl)
+          if [ -n "$CHANGED_CONFIG" ]; then
+            echo "Refusing to use PR-controlled Tessl configuration:" >&2
+            echo "$CHANGED_CONFIG" >&2
+            exit 1
+          fi
+
+      - name: Setup Tessl
+        if: steps.review-policy.outputs.should-run == 'true'
+        uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2
+        with:
+          token: ${{ secrets.TESSL_TOKEN }}
+
+      - name: Run change review
+        if: steps.review-policy.outputs.should-run == 'true'
+        timeout-minutes: 20
+        working-directory: _pr
+        env:
+          REVIEW_OUTPUT: ${{ env.REVIEW_OUTPUT }}
+          REVIEW_SKILLS: ${{ env.REVIEW_SKILLS }}
+          REVIEW_BASE: ${{ env.REVIEW_BASE }}
+        run: |
+          set -euo pipefail
+
+          read -r -a REVIEW_SKILL_REFS <<< "$REVIEW_SKILLS"
+          if [ "${#REVIEW_SKILL_REFS[@]}" -eq 0 ]; then
+            echo "::error::REVIEW_SKILLS must include at least one skill"
+            exit 1
+          fi
+
+          skill_args=()
+          for skill in "${REVIEW_SKILL_REFS[@]}"; do
+            skill_args+=(--skill "$skill")
+          done
+
+          tessl change review run \
+            --json \
+            --output "$REVIEW_OUTPUT" \
+            "${skill_args[@]}" \
+            --base "$REVIEW_BASE"
+
+      - name: Upload review data for publisher
+        if: steps.review-policy.outputs.should-run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-review-raw-${{ steps.pr.outputs.head-sha }}
+          path: _pr/${{ env.REVIEW_OUTPUT }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-review:
+    needs: change-review
+    if: needs.change-review.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REPO: ${{ github.repository }}
+      REVIEW_ACTION: comment
+
+    steps:
+      - name: Checkout trusted publisher
+        uses: actions/checkout@v4
+        with:
+          # pull_request_target and comment-triggered workflows load executable
+          # support only from the trusted default branch.
+          ref: ${{ github.event.repository.default_branch }}
+          path: _workflow
+          sparse-checkout: |
+            .github/change-review/publish-review.mjs
+          persist-credentials: false
+
+      - name: Setup Node for publisher
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download review data
+        uses: actions/download-artifact@v4
+        with:
+          name: change-review-raw-${{ needs.change-review.outputs.head-sha }}
+          path: _review
+
+      - name: Verify PR head is still current
+        id: freshness
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.change-review.outputs.pr-number }}
+          EXPECTED_HEAD_SHA: ${{ needs.change-review.outputs.head-sha }}
+        run: |
+          set -euo pipefail
+
+          CURRENT_HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)
+          if [ "$CURRENT_HEAD_SHA" != "$EXPECTED_HEAD_SHA" ]; then
+            echo "should-publish=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping stale review for $EXPECTED_HEAD_SHA; PR now points to $CURRENT_HEAD_SHA"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body \
+              "Tessl change review skipped because the PR changed during analysis. Comment \`@tessl-change-review\` to review the current head."
+          else
+            echo "should-publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish PR review
+        if: steps.freshness.outputs.should-publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.change-review.outputs.pr-number }}
+          EXPECTED_HEAD_SHA: ${{ needs.change-review.outputs.head-sha }}
+          REVIEW_ACTION: ${{ env.REVIEW_ACTION }}
+          REVIEW_OUTPUT: _review/change-review.json
+          OUT: _review/review-publish.json
+        run: node _workflow/.github/change-review/publish-review.mjs
+
+      - name: Upload publication record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-review-${{ needs.change-review.outputs.head-sha }}
+          path: |
+            _review/change-review.json
+            _review/review-publish.json
+          if-no-files-found: ignore
+          retention-days: 7
