@@ -84,7 +84,8 @@ identify a more specific format. Content detection always takes precedence, so
 a qcow2 or vmdk image named with an `.img` suffix is still handled using its
 actual format. The image must contain a partition table and filesystem supported
 by `sbom-vm`; package discovery then depends on what Syft can identify in the
-mounted filesystem.
+mounted filesystem. Compressed `.img` inputs are rejected; decompress them
+explicitly before scanning so their expanded size can be managed safely.
 
 ```bash
 sudo ./sbom-vm.py firmware.img

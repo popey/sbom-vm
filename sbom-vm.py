@@ -38,7 +38,6 @@ def setup_logging(image_path: Path) -> logging.Logger:
 logger = None  # Will be initialized in main()
 
 RAW_FALLBACK_SUFFIXES = {'.ami', '.img', '.raw'}
-GZIP_FALLBACK_SUFFIXES = {'.ami', '.raw'}
 
 class ImageMounter:
     def __init__(self, image_path: str, mount_point: str = None):
@@ -93,10 +92,27 @@ class ImageMounter:
                 logger.error(f"Error output: {e.stderr}")
             raise
 
+    def _has_gzip_magic(self) -> bool:
+        try:
+            with open(self.image_path, 'rb') as image_file:
+                return image_file.read(2) == b'\x1f\x8b'
+        except OSError as e:
+            logger.warning(f"Failed to check if file is gzipped: {e}")
+            return False
+
     def _detect_image_format(self) -> str:
         """Detect the format of the input image."""
         logger.info(f"Detecting format of {self.image_path}")
-        
+
+        suffix = self.image_path.suffix.lower()
+        if suffix in RAW_FALLBACK_SUFFIXES and self._has_gzip_magic():
+            if suffix == '.img':
+                raise RuntimeError(
+                    "Compressed .img files are not supported; decompress the image "
+                    "before scanning it"
+                )
+            return 'gzip'
+
         try:
             result = self._run_command(["qemu-img", "info", str(self.image_path)])
             for line in result.stdout.split('\n'):
@@ -108,18 +124,9 @@ class ImageMounter:
             logger.warning(f"qemu-img info failed: {e}")
 
         # Fallback to extension-based detection
-        suffix = self.image_path.suffix.lower()
         if suffix == '.vmdk':
             return 'vmdk'
         elif suffix in RAW_FALLBACK_SUFFIXES:
-            if suffix in GZIP_FALLBACK_SUFFIXES:
-                try:
-                    with open(self.image_path, 'rb') as f:
-                        if f.read(2).startswith(b'\x1f\x8b'):
-                            return 'gzip'
-                except OSError as e:
-                    logger.warning(f"Failed to check if file is gzipped: {e}")
-
             logger.info(f"Using raw format fallback for {suffix} image")
             return 'raw'
         
