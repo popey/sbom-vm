@@ -7,7 +7,7 @@ In its current state, this script leverages common Linux utilities (gdisk, qemu-
 ## Features
 
 * Read-only mounting of VM disk images via qemu-nbd
-* Supports multiple VM disk formats (qcow2, vmdk)
+* Supports multiple disk image formats (raw, `.img`, AMI, qcow2, vmdk)
 * Automatic detection and mounting of common filesystems:
   * Windows (NTFS)
   * Linux (ext3, ext4, xfs, ZFS, BTRFS)
@@ -35,7 +35,7 @@ Here's what I envisage for an MVP (Minimum Viable Product), to generate SBOMs fr
 
 ### MVP
 
-* Examine common disk image formats (raw, ami, qcow2, vmdk)
+* Examine common disk image formats (raw, img, ami, qcow2, vmdk)
 * Mount common partition types (ntfs, hfsplus, apfs, ext4, vfat, zfs)
 * Launch Syft with appropriate options to generate an SBOM
 
@@ -78,6 +78,17 @@ $ sudo apt install qemu-utils gdisk fdisk parted util-linux ntfs-3g hfsprogs apf
 ## Running
 
 * Run the python script with a disk image as the only parameter
+
+Files ending in `.img` are treated as raw disk images when `qemu-img` cannot
+identify a more specific format. Content detection always takes precedence, so
+a qcow2 or vmdk image named with an `.img` suffix is still handled using its
+actual format. The image must contain a partition table and filesystem supported
+by `sbom-vm`; package discovery then depends on what Syft can identify in the
+mounted filesystem.
+
+```bash
+sudo ./sbom-vm.py firmware.img
+```
 
 ## Example output
 

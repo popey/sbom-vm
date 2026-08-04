@@ -37,6 +37,8 @@ def setup_logging(image_path: Path) -> logging.Logger:
 
 logger = None  # Will be initialized in main()
 
+RAW_IMAGE_SUFFIXES = {'.ami', '.img', '.raw'}
+
 class ImageMounter:
     def __init__(self, image_path: str, mount_point: str = None):
         self.image_path = Path(image_path)
@@ -101,23 +103,30 @@ class ImageMounter:
                     fmt = line.split(':')[1].strip()
                     logger.info(f"qemu-img detected format: {fmt}")
                     return fmt
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, OSError) as e:
             logger.warning(f"qemu-img info failed: {e}")
 
         # Fallback to extension-based detection
         suffix = self.image_path.suffix.lower()
         if suffix == '.vmdk':
             return 'vmdk'
-        elif suffix in ['.ami', '.raw']:
+        elif suffix in RAW_IMAGE_SUFFIXES:
             # Check if gzipped
             try:
                 with open(self.image_path, 'rb') as f:
                     if f.read(2).startswith(b'\x1f\x8b'):
                         return 'gzip'
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Failed to check if file is gzipped: {e}")
+
+            logger.info(f"Using raw format fallback for {suffix} image")
+            return 'raw'
         
-        return 'raw'  # Default to raw format
+        logger.warning(
+            f"Unable to identify image format from content or suffix {suffix!r}; "
+            "assuming raw"
+        )
+        return 'raw'
 
     def _prepare_image(self) -> Path:
         """Prepare image for mounting, converting if necessary."""
