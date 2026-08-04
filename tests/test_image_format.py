@@ -76,10 +76,29 @@ class ImageFormatTest(unittest.TestCase):
             image_path = Path(temp_dir) / "firmware.raw"
             image_path.write_bytes(b"\x1f\x8bcompressed image")
             mounter = sbom_vm.ImageMounter(str(image_path))
-            mounter._run_command = Mock()
+            mounter._run_command = Mock(
+                side_effect=subprocess.CalledProcessError(
+                    returncode=1,
+                    cmd=["qemu-img", "info", str(image_path)],
+                )
+            )
 
             self.assertEqual(mounter._detect_image_format(), "gzip")
-            mounter._run_command.assert_not_called()
+
+    def test_raw_content_detection_precedes_gzip_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "firmware.raw"
+            image_path.write_bytes(b"\x1f\x8braw image content")
+            mounter = sbom_vm.ImageMounter(str(image_path))
+            mounter._run_command = Mock(
+                return_value=subprocess.CompletedProcess(
+                    args=["qemu-img"],
+                    returncode=0,
+                    stdout="image: firmware.raw\nfile format: raw\n",
+                )
+            )
+
+            self.assertEqual(mounter._detect_image_format(), "raw")
 
 
 if __name__ == "__main__":
