@@ -37,6 +37,9 @@ def setup_logging(image_path: Path) -> logging.Logger:
 
 logger = None  # Will be initialized in main()
 
+RAW_FALLBACK_SUFFIXES = {'.ami', '.img', '.raw'}
+GZIP_FALLBACK_SUFFIXES = {'.ami', '.raw'}
+
 class ImageMounter:
     def __init__(self, image_path: str, mount_point: str = None):
         self.image_path = Path(image_path)
@@ -45,6 +48,7 @@ class ImageMounter:
         self.mounted_partition = None
         self.temp_dir = None
         self.temp_image = None
+        self.prepared_image_format = None
         self.imported_zfs_pool = None
 
     def parse_size(self, size_str):
@@ -90,10 +94,25 @@ class ImageMounter:
                 logger.error(f"Error output: {e.stderr}")
             raise
 
+    def _has_gzip_magic(self) -> bool:
+        try:
+            with open(self.image_path, 'rb') as image_file:
+                return image_file.read(2) == b'\x1f\x8b'
+        except OSError as e:
+            logger.warning(f"Failed to check if file is gzipped: {e}")
+            return False
+
     def _detect_image_format(self) -> str:
         """Detect the format of the input image."""
         logger.info(f"Detecting format of {self.image_path}")
-        
+
+        suffix = self.image_path.suffix.lower()
+        if suffix == '.img' and self._has_gzip_magic():
+            raise RuntimeError(
+                "Compressed .img files are not supported; decompress the image "
+                "before scanning it"
+            )
+
         try:
             result = self._run_command(["qemu-img", "info", str(self.image_path)])
             for line in result.stdout.split('\n'):
@@ -101,23 +120,24 @@ class ImageMounter:
                     fmt = line.split(':')[1].strip()
                     logger.info(f"qemu-img detected format: {fmt}")
                     return fmt
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, OSError) as e:
             logger.warning(f"qemu-img info failed: {e}")
 
         # Fallback to extension-based detection
-        suffix = self.image_path.suffix.lower()
         if suffix == '.vmdk':
             return 'vmdk'
-        elif suffix in ['.ami', '.raw']:
-            # Check if gzipped
-            try:
-                with open(self.image_path, 'rb') as f:
-                    if f.read(2).startswith(b'\x1f\x8b'):
-                        return 'gzip'
-            except Exception as e:
-                logger.warning(f"Failed to check if file is gzipped: {e}")
+        elif suffix in RAW_FALLBACK_SUFFIXES:
+            if suffix in GZIP_FALLBACK_SUFFIXES and self._has_gzip_magic():
+                return 'gzip'
+
+            logger.info(f"Using raw format fallback for {suffix} image")
+            return 'raw'
         
-        return 'raw'  # Default to raw format
+        logger.warning(
+            f"Unable to identify image format from content or suffix {suffix!r}; "
+            "assuming raw"
+        )
+        return 'raw'
 
     def _prepare_image(self) -> Path:
         """Prepare image for mounting, converting if necessary."""
@@ -125,6 +145,7 @@ class ImageMounter:
         if self.mount_point is None:
             self.mount_point = Path(tempfile.mkdtemp(prefix='sbomvm_mount_', dir=self.temp_dir))
         image_format = self._detect_image_format()
+        self.prepared_image_format = image_format
         
         if image_format == 'gzip':
             logger.info("Decompressing gzipped image")
@@ -134,6 +155,7 @@ class ImageMounter:
                     ["gunzip", "-c", str(self.image_path)],
                     stdout=output,
                 )
+            self.prepared_image_format = 'raw'
             return self.temp_image
             
         elif image_format in ['vmdk', 'vhd', 'vpc']:
@@ -146,6 +168,7 @@ class ImageMounter:
                 str(self.image_path),
                 str(self.temp_image)
             ])
+            self.prepared_image_format = 'qcow2'
             return self.temp_image
         
         return self.image_path
@@ -166,8 +189,17 @@ class ImageMounter:
     def connect_image(self):
         prepared_image = self._prepare_image()
         self.nbd_device = self._find_free_nbd_device()
-        logger.info(f"Connecting image {prepared_image} to NBD device {self.nbd_device}")
-        self._run_command(["qemu-nbd", "--connect", self.nbd_device, str(prepared_image)])
+        logger.info(
+            f"Connecting {self.prepared_image_format} image {prepared_image} "
+            f"to NBD device {self.nbd_device} (read-only)"
+        )
+        self._run_command([
+            "qemu-nbd",
+            "--read-only",
+            f"--format={self.prepared_image_format}",
+            "--connect", self.nbd_device,
+            str(prepared_image),
+        ])
         # Increase delay to allow NBD device to stabilize
         time.sleep(2)
         # Trigger partition rescanning
