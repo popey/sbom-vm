@@ -48,6 +48,7 @@ class ImageMounter:
         self.mounted_partition = None
         self.temp_dir = None
         self.temp_image = None
+        self.prepared_image_format = None
         self.imported_zfs_pool = None
 
     def parse_size(self, size_str):
@@ -144,6 +145,7 @@ class ImageMounter:
         if self.mount_point is None:
             self.mount_point = Path(tempfile.mkdtemp(prefix='sbomvm_mount_', dir=self.temp_dir))
         image_format = self._detect_image_format()
+        self.prepared_image_format = image_format
         
         if image_format == 'gzip':
             logger.info("Decompressing gzipped image")
@@ -153,6 +155,7 @@ class ImageMounter:
                     ["gunzip", "-c", str(self.image_path)],
                     stdout=output,
                 )
+            self.prepared_image_format = 'raw'
             return self.temp_image
             
         elif image_format in ['vmdk', 'vhd', 'vpc']:
@@ -165,6 +168,7 @@ class ImageMounter:
                 str(self.image_path),
                 str(self.temp_image)
             ])
+            self.prepared_image_format = 'qcow2'
             return self.temp_image
         
         return self.image_path
@@ -185,8 +189,17 @@ class ImageMounter:
     def connect_image(self):
         prepared_image = self._prepare_image()
         self.nbd_device = self._find_free_nbd_device()
-        logger.info(f"Connecting image {prepared_image} to NBD device {self.nbd_device}")
-        self._run_command(["qemu-nbd", "--connect", self.nbd_device, str(prepared_image)])
+        logger.info(
+            f"Connecting {self.prepared_image_format} image {prepared_image} "
+            f"to NBD device {self.nbd_device} (read-only)"
+        )
+        self._run_command([
+            "qemu-nbd",
+            "--read-only",
+            f"--format={self.prepared_image_format}",
+            "--connect", self.nbd_device,
+            str(prepared_image),
+        ])
         # Increase delay to allow NBD device to stabilize
         time.sleep(2)
         # Trigger partition rescanning

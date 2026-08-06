@@ -100,6 +100,27 @@ class ImageFormatTest(unittest.TestCase):
 
             self.assertEqual(mounter._detect_image_format(), "raw")
 
+    def test_connect_passes_prepared_format_and_read_only_to_qemu_nbd(self):
+        image_path = Path("firmware.img")
+        mounter = sbom_vm.ImageMounter(str(image_path))
+        mounter._prepare_image = Mock(return_value=image_path)
+        mounter._find_free_nbd_device = Mock(return_value="/dev/nbd0")
+        mounter._run_command = Mock()
+        mounter.prepared_image_format = "raw"
+
+        mounter.connect_image()
+
+        self.assertEqual(
+            mounter._run_command.call_args_list[0].args[0],
+            [
+                "qemu-nbd",
+                "--read-only",
+                "--format=raw",
+                "--connect", "/dev/nbd0",
+                "firmware.img",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
